@@ -692,6 +692,13 @@ export default function App() {
     return () => { [bSub,eSub,pSub,uSub,aSub].forEach(s=>sb.removeChannel(s)); };
   }, [profile?.id]);
 
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery') || hash.includes('type=invite') || hash.includes('type=signup')) {
+      setMode('set-password');
+    }
+  }, []);
+
   const calc = useMemo(() => {
     return bookings.map(b => {
       const c = calcBooking(b);
@@ -933,13 +940,6 @@ export default function App() {
     return true;
   });
 
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes('type=recovery') || hash.includes('type=invite') || hash.includes('type=signup')) {
-      setMode('set-password');
-    }
-  }, []);
-
   async function handleSetPassword() {
     if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
     if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
@@ -948,7 +948,6 @@ export default function App() {
     setLoading(false);
     if (err) { setError(err.message); } else { setMode('login'); setNewPassword(''); setConfirmPassword(''); }
   }
-
 
   return (
     <div style={{ fontFamily: "'Barlow', -apple-system, sans-serif", background: "#FFFFFF", minHeight: "100vh" }}>
