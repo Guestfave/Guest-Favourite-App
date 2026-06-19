@@ -169,7 +169,8 @@ function feeBasisLabels(plat) {
 //                    + (coHostCalloutCharge - coHostCalloutCost)
 //                    - mistakes
 
-function calcBooking(b) {
+function calcBooking(b, propertiesMap) {
+  const PROPS = propertiesMap || DEFAULT_PROPERTIES;
   const fg   = parseFloat(b.fullGross)           || 0;
   const cf   = parseFloat(b.cleaningFee)         || 0;
   const lf   = parseFloat(b.laundryFees)         || 0;
@@ -217,7 +218,7 @@ function calcBooking(b) {
   const channelFeeAtTrueNet = (platform.type === "website" || platform.type === "vrbo") ? hostServiceFee : 0;
   const trueNet = bookingPayout - cf - lf - spaQ - channelFeeAtTrueNet;
 
-  const prop = PROPERTIES[b.property] || Object.values(PROPERTIES)[0] || { sholom: 0.16, cohost: 0.035, cohostName: "", model: "tiered", live: false };
+  const prop = PROPS[b.property] || Object.values(PROPS)[0] || { sholom: 0.16, cohost: 0.035, cohostName: "", model: "tiered", live: false };
 
   const businessComm = trueNet * prop.sholom;
 
@@ -543,7 +544,7 @@ function CalcPreview({ form, isCohost }) {
   if (!fg) return null;
   const prop = PROPERTIES[form.property] || Object.values(PROPERTIES)[0];
   if (!prop) return null;
-  const c    = calcBooking(form);
+  const c    = calcBooking(form, PROPERTIES);
   const cohostBasisLabel = prop.model === "tiered"
     ? `${(prop.cohost*100).toFixed(1)}% of (True Net − Biz Comm)`
     : `${(prop.cohost*100).toFixed(1)}% of Booking Payout`;
@@ -738,7 +739,7 @@ export default function App() {
   const calc = useMemo(() => {
     return bookings.map(b => {
       try {
-        const c = calcBooking(b);
+        const c = calcBooking(b, properties);
         const linked = expenses.filter(e => e.bookingId === b.id && e.expenseType);
         if (!linked.length) return c;
         const bizCost   = sum(linked.filter(e => e.expenseType === "business"), "amount");
@@ -753,7 +754,7 @@ export default function App() {
         return { ...b, base: 0, guestServiceFee: 0, hostServiceFee: 0, bookingPayout: 0, trueNet: 0, businessComm: 0, cohostComm: 0, ownerPayout: 0, businessProfit: 0 };
       }
     });
-  }, [bookings, expenses]);
+  }, [bookings, expenses, properties]);
 
   // ── Outstanding issues for the Owner: a "cost" entered by CoHost with no matching "charge" set yet ──
   const outstandingIssues = useMemo(() => {
