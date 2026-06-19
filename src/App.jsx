@@ -217,7 +217,7 @@ function calcBooking(b) {
   const channelFeeAtTrueNet = (platform.type === "website" || platform.type === "vrbo") ? hostServiceFee : 0;
   const trueNet = bookingPayout - cf - lf - spaQ - channelFeeAtTrueNet;
 
-  const prop = PROPERTIES[b.property] || PROPERTIES["CH"];
+  const prop = PROPERTIES[b.property] || Object.values(PROPERTIES)[0] || { sholom: 0.16, cohost: 0.035, cohostName: "", model: "tiered", live: false };
 
   const businessComm = trueNet * prop.sholom;
 
@@ -281,14 +281,31 @@ function Field({ label, field, form, setForm, type = "text", step }) {
 }
 
 function LoginScreen({ onLogin }) {
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError]       = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [mode, setMode]         = useState("login"); // "login" | "reset"
+  const [email, setEmail]         = useState("");
+  const [password, setPassword]   = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError]         = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [mode, setMode]           = useState("login"); // "login" | "reset" | "set-password"
   const [resetSent, setResetSent] = useState(false);
-  const [newPassword, setNewPassword]         = useState("");
-  const [confirmPassword, setConfirmPassword]   = useState("");
+
+  // On mount — check if URL hash contains a recovery token (from password reset email)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("type=recovery") && hash.includes("access_token")) {
+      // Parse the token from the hash and set the session
+      sb.auth.getSession().then(({ data: { session } }) => {
+        if (session) setMode("set-password");
+      });
+      // Also try exchanging the hash directly
+      sb.auth.exchangeCodeForSession(window.location.search).catch(() => {});
+      setMode("set-password");
+    }
+    if (hash && hash.includes("type=invite") && hash.includes("access_token")) {
+      setMode("set-password");
+    }
+  }, []);
 
   async function handleLogin(e) {
     e && e.preventDefault();
@@ -296,11 +313,31 @@ function LoginScreen({ onLogin }) {
     setLoading(true); setError("");
     const { data, error: err } = await sb.auth.signInWithPassword({ email, password });
     if (err) { setError(err.message); setLoading(false); return; }
-    // Fetch profile to get role + properties
     const { data: profile } = await sb.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setError("Account not set up yet — contact your administrator."); setLoading(false); return; }
     if (!profile.active) { setError("Your account has been deactivated."); await sb.auth.signOut(); setLoading(false); return; }
     onLogin(data.user, profile);
+    setLoading(false);
+  }
+
+  async function handleSetPassword(e) {
+    e && e.preventDefault();
+    if (!newPassword) return;
+    if (newPassword !== confirmPassword) { setError("Passwords don't match"); return; }
+    if (newPassword.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    const { error: err } = await sb.auth.updateUser({ password: newPassword });
+    if (err) { setError(err.message); setLoading(false); return; }
+    // Now sign in automatically
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      const { data: profile } = await sb.from("profiles").select("*").eq("id", session.user.id).single();
+      if (profile) { onLogin(session.user, profile); return; }
+    }
+    // If no session, redirect to login
+    window.location.hash = "";
+    setMode("login");
+    setError("");
     setLoading(false);
   }
 
@@ -331,27 +368,31 @@ function LoginScreen({ onLogin }) {
         </div>
 
         <div style={{ marginTop: 28 }}>
-          {resetSent ? (
+          {mode === "set-password" ? (
+            <form onSubmit={handleSetPassword} style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Set your password</div>
+              <div style={{ fontSize: 13, color: "#666", marginBottom: 20 }}>Choose a password to secure your account</div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>New Password</label>
+              <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(""); }}
+                placeholder="At least 6 characters" autoFocus
+                style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 14, marginBottom: 14, boxSizing: "border-box", outline: "none" }} />
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>Confirm Password</label>
+              <input type="password" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setError(""); }}
+                placeholder="Same password again"
+                style={{ width: "100%", padding: "11px 14px", border: error ? "1.5px solid #fca5a5" : "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 14, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
+              {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 10 }}>{error}</div>}
+              <button type="submit" disabled={loading || !newPassword || !confirmPassword}
+                style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: loading || !newPassword || !confirmPassword ? "#E8E8E8" : "#E61C5D", color: loading || !newPassword || !confirmPassword ? "#aaa" : "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 14 }}>
+                {loading ? "Setting password…" : "Set Password & Sign In"}
+              </button>
+            </form>
+          ) : resetSent ? (
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>📧</div>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Check your email</div>
               <div style={{ fontSize: 13, color: "#666", marginBottom: 20 }}>We've sent a password reset link to {email}</div>
               <button onClick={() => { setResetSent(false); setMode("login"); }} style={{ color: "#E61C5D", background: "none", border: "none", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Back to login</button>
             </div>
-          ) : mode === "set-password" ? (
-            <>
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Set your password</div>
-              <div style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>Choose a password for your account.</div>
-              {error && <div style={{ color: 'red', marginBottom: 8, fontSize: 13 }}>{error}</div>}
-              <input type="password" placeholder="New password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, marginBottom: 10, boxSizing: 'border-box' }} />
-              <input type="password" placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, marginBottom: 16, boxSizing: 'border-box' }} />
-              <button onClick={handleSetPassword} disabled={loading}
-                style={{ width: '100%', padding: '12px', background: '#E61C5D', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
-                {loading ? 'Setting password...' : 'Set Password'}
-              </button>
-            </>
           ) : mode === "reset" ? (
             <>
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Reset password</div>
@@ -497,10 +538,12 @@ function Attachments({ recordType, recordId, authUserId, readOnly }) {
 }
 
 function CalcPreview({ form, isCohost }) {
+  try {
   const fg = parseFloat(form.fullGross);
   if (!fg) return null;
+  const prop = PROPERTIES[form.property] || Object.values(PROPERTIES)[0];
+  if (!prop) return null;
   const c    = calcBooking(form);
-  const prop = PROPERTIES[form.property] || PROPERTIES["CH"];
   const cohostBasisLabel = prop.model === "tiered"
     ? `${(prop.cohost*100).toFixed(1)}% of (True Net − Biz Comm)`
     : `${(prop.cohost*100).toFixed(1)}% of Booking Payout`;
@@ -535,6 +578,7 @@ function CalcPreview({ form, isCohost }) {
       )}
     </div>
   );
+  } catch(err) { return null; }
 }
 
 export default function App() {
@@ -612,7 +656,6 @@ export default function App() {
       setAuthLoading(false);
     });
     const { data: { subscription } } = sb.auth.onAuthStateChange(async (event, session) => {
-      if (event === "PASSWORD_RECOVERY") { setMode("set-password"); }
       if (event === "SIGNED_OUT") { setAuthUser(null); setProfile(null); setBookings([]); setExpenses([]); setUsers([]); }
     });
     return () => subscription.unsubscribe();
@@ -692,26 +735,23 @@ export default function App() {
     return () => { [bSub,eSub,pSub,uSub,aSub].forEach(s=>sb.removeChannel(s)); };
   }, [profile?.id]);
 
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes('type=recovery') || hash.includes('type=invite') || hash.includes('type=signup')) {
-      setMode('set-password');
-    }
-  }, []);
-
   const calc = useMemo(() => {
     return bookings.map(b => {
-      const c = calcBooking(b);
-      // Expenses linked to this booking that have been typed
-      const linked = expenses.filter(e => e.bookingId === b.id && e.expenseType);
-      if (!linked.length) return c;
-      const bizCost   = sum(linked.filter(e => e.expenseType === "business"), "amount");
-      const ownerCost = sum(linked.filter(e => e.expenseType === "owner"),    "amount");
-      return {
-        ...c,
-        businessProfit: +(c.businessProfit - bizCost).toFixed(2),
-        ownerPayout:    +(c.ownerPayout    - ownerCost).toFixed(2),
-      };
+      try {
+        const c = calcBooking(b);
+        const linked = expenses.filter(e => e.bookingId === b.id && e.expenseType);
+        if (!linked.length) return c;
+        const bizCost   = sum(linked.filter(e => e.expenseType === "business"), "amount");
+        const ownerCost = sum(linked.filter(e => e.expenseType === "owner"),    "amount");
+        return {
+          ...c,
+          businessProfit: +(c.businessProfit - bizCost).toFixed(2),
+          ownerPayout:    +(c.ownerPayout    - ownerCost).toFixed(2),
+        };
+      } catch(err) {
+        console.error("calcBooking error for booking", b.id, err);
+        return { ...b, base: 0, guestServiceFee: 0, hostServiceFee: 0, bookingPayout: 0, trueNet: 0, businessComm: 0, cohostComm: 0, ownerPayout: 0, businessProfit: 0 };
+      }
     });
   }, [bookings, expenses]);
 
@@ -939,15 +979,6 @@ export default function App() {
     if (t === "expenses" && isCohost) return false;
     return true;
   });
-
-  async function handleSetPassword() {
-    if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
-    setLoading(true);
-    const { error: err } = await sb.auth.updateUser({ password: newPassword });
-    setLoading(false);
-    if (err) { setError(err.message); } else { setMode('login'); setNewPassword(''); setConfirmPassword(''); }
-  }
 
   return (
     <div style={{ fontFamily: "'Barlow', -apple-system, sans-serif", background: "#FFFFFF", minHeight: "100vh" }}>
@@ -1202,7 +1233,7 @@ export default function App() {
                     <thead style={{ background: "#F9F9F9" }}>
                       <tr>
                         {(isClient
-                          ? ["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry Fee","Spa Fee","Callout Fee","Biz Commission","Client Payout"]
+                          ? ["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
                           : isCohost
                             ? ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","CoHost Comm","Client Payout",""]
                             : ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","True Net","Biz Comm","CoHost Comm","Client Payout","Biz Profit",""]
@@ -1221,12 +1252,12 @@ export default function App() {
                               <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                               <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                               <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
-                              <td style={{ ...td, color: "#f97316" }}>{fmt(b.hostServiceFee)}</td>
-                              <td style={{ ...td, color: "#ef4444" }}>{fmt(b.guestServiceFee)}</td>
-                              <td style={td}>{fmt(b.cleaningFee)}</td>
-                              <td style={td}>{fmt(b.laundryFees)}</td>
-                              <td style={td}>{(parseFloat(b.spaFeeCharge)||0) > 0 ? fmt(b.spaFeeCharge) : "—"}</td>
-                              <td style={td}>{(parseFloat(b.coHostCalloutCharge)||0) > 0 ? fmt(b.coHostCalloutCharge) : "—"}</td>
+                              <td style={{ ...td, color: "#64748b" }}>{fmt(b.hostServiceFee)}</td>
+                              <td style={{ ...td, color: "#64748b" }}>{fmt(b.guestServiceFee)}</td>
+                              <td style={{ ...td, color: "#64748b" }}>{fmt(b.cleaningFee)}</td>
+                              <td style={{ ...td, color: "#64748b" }}>{fmt(b.laundryFees)}</td>
+                              <td style={{ ...td, color: "#64748b" }}>{(parseFloat(b.spaFeeCharge)||0) > 0 ? fmt(b.spaFeeCharge) : "—"}</td>
+                              <td style={{ ...td, color: "#64748b" }}>{(parseFloat(b.coHostCalloutCharge)||0) > 0 ? fmt(b.coHostCalloutCharge) : "—"}</td>
                               <td style={{ ...td, color: "#8b5cf6" }}>{fmt(b.businessComm)}</td>
                               <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(b.ownerPayout)}</td>
                             </>
@@ -1266,7 +1297,13 @@ export default function App() {
                           <>
                             <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTALS ({filtered.length})</td>
                             <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.gross)}</td>
-                            <td colSpan={7} />
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"hostServiceFee"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"guestServiceFee"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"cleaningFee"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"laundryFees"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"spaFeeCharge"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"coHostCalloutCharge"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(filtered,"businessComm"))}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(totals.owner)}</td>
                           </>
                         ) : (
@@ -1392,7 +1429,7 @@ export default function App() {
                     {[
                       { label: "Bookings",          value: cdFiltered.length,                           icon: "📋", color: "#0D0D0D" },
                       { label: "Total Gross",        value: fmt(sum(cdFiltered,"fullGross")),            icon: "💷", color: "#2563eb" },
-                      { label: "Biz Commission",     value: fmt(sum(cdFiltered,"businessComm")),         icon: "📊", color: "#8b5cf6" },
+                      { label: "Total Fees",      value: fmt(sum(cdFiltered,"fullGross") - sum(cdFiltered,"ownerPayout")), icon: "💳", color: "#f97316" },
                       { label: "Client Payout",      value: fmt(sum(cdFiltered,"ownerPayout")),          icon: "💰", color: "#059669" },
                       { label: "Client Expenses",    value: fmt(sum(clientExpenses,"charge")),           icon: "💸", color: "#f97316" },
                       { label: "Net After Expenses", value: fmt(sum(cdFiltered,"ownerPayout") - sum(clientExpenses,"charge")), icon: "✅", color: "#16a34a" },
@@ -1411,11 +1448,10 @@ export default function App() {
                     <div style={{ overflowX: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse" }}>
                         <thead style={{ background: "#F9F9F9" }}>
-                          <tr>{["ID","Platform","Guest","Dates","Full Gross","Deductions","Biz Commission","Client Payout"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                          <tr>{["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
                         </thead>
                         <tbody>
                           {cdFiltered.map(b => {
-                            const deductions = (parseFloat(b.guestServiceFee)||0) + (parseFloat(b.hostServiceFee)||0) + (parseFloat(b.cleaningFee)||0) + (parseFloat(b.laundryFees)||0) + (parseFloat(b.spaFeeCharge)||0) + (parseFloat(b.coHostCalloutCharge)||0);
                             return (
                               <tr key={b.id} style={{ background: "#FFFFFF" }}>
                                 <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
@@ -1423,7 +1459,12 @@ export default function App() {
                                 <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                                 <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                                 <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
-                                <td style={{ ...td, color: "#ef4444" }}>{fmt(deductions)}</td>
+                                <td style={{ ...td, color: "#64748b" }}>{fmt(b.hostServiceFee)}</td>
+                                <td style={{ ...td, color: "#64748b" }}>{fmt(b.guestServiceFee)}</td>
+                                <td style={{ ...td, color: "#64748b" }}>{fmt(b.cleaningFee)}</td>
+                                <td style={{ ...td, color: "#64748b" }}>{fmt(b.laundryFees)}</td>
+                                <td style={{ ...td, color: "#64748b" }}>{(parseFloat(b.spaFeeCharge)||0) > 0 ? fmt(b.spaFeeCharge) : "—"}</td>
+                                <td style={{ ...td, color: "#64748b" }}>{(parseFloat(b.coHostCalloutCharge)||0) > 0 ? fmt(b.coHostCalloutCharge) : "—"}</td>
                                 <td style={{ ...td, color: "#8b5cf6" }}>{fmt(b.businessComm)}</td>
                                 <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(b.ownerPayout)}</td>
                               </tr>
@@ -1434,7 +1475,12 @@ export default function App() {
                           <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                             <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                             <td style={{ ...td, fontWeight: 700 }}>{fmt(sum(cdFiltered,"fullGross"))}</td>
-                            <td />
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(cdFiltered,"hostServiceFee"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(cdFiltered,"guestServiceFee"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(cdFiltered,"cleaningFee"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(cdFiltered,"laundryFees"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(cdFiltered,"spaFeeCharge"))}</td>
+                            <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(cdFiltered,"coHostCalloutCharge"))}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(cdFiltered,"businessComm"))}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(sum(cdFiltered,"ownerPayout"))}</td>
                           </tr>
