@@ -64,7 +64,7 @@ const PLATFORMS = {
 };
 const PLATFORM_NAMES = Object.keys(PLATFORMS);
 
-const EXPENSE_CATEGORIES = ["Maintenance", "Callout", "Hamper", "Replenishables", "Other"];
+const EXPENSE_CATEGORIES = ["Maintenance", "Callout", "CoHost Callout", "Hamper", "Replenishables", "Other"];
 
 // ─── ROLE-BASED ACCESS ───────────────────────────────────────────────────────
 // CHANGE THESE PINS to whatever you like:
@@ -546,8 +546,8 @@ function CalcPreview({ form, isCohost }) {
   if (!prop) return null;
   const c    = calcBooking(form, PROPERTIES);
   const cohostBasisLabel = prop.model === "tiered"
-    ? `${(prop.cohost*100).toFixed(1)}% of (True Net − Biz Comm)`
-    : `${(prop.cohost*100).toFixed(1)}% of Booking Payout`;
+    ? `${+(prop.cohost*100).toFixed(1)}% of (True Net − Biz Comm)`
+    : `${+(prop.cohost*100).toFixed(1)}% of Booking Payout`;
   const plat = PLATFORMS[form.platform] || PLATFORMS["AirBNB"];
   const feeLabels = feeBasisLabels(plat);
   const rows = [
@@ -556,7 +556,7 @@ function CalcPreview({ form, isCohost }) {
     [feeLabels.host,   fmt(c.hostServiceFee),  "#fb923c", null],
     ["Booking Payout",            fmt(c.bookingPayout),   "#60a5fa", null],
     ["True Net",                  fmt(c.trueNet),         "#a78bfa", "trueNet"],
-    [`Business Comm ${(prop.sholom*100).toFixed(0)}% of True Net`, fmt(c.businessComm), "#4ade80", "businessComm"],
+    [`Business Comm ${+(prop.sholom*100).toFixed(0)}% of True Net`, fmt(c.businessComm), "#4ade80", "businessComm"],
     [`CoHost Comm — ${cohostBasisLabel}`, fmt(c.cohostComm), "#f472b6", null],
     ["Client Payout",              fmt(c.ownerPayout),     "#34d399", null],
     ["Business Profit",           fmt(c.businessProfit),  "#facc15", "businessProfit"],
@@ -830,10 +830,19 @@ export default function App() {
     return propOk && monthOk && yearOk;
   }), [calc, dashProp, dashMonth, dashYear]);
 
+  // CoHost Callout expenses — standalone expenses categorised as "CoHost Callout"
+  // that should appear in the cohost's earnings as additional callout income
+  const cohostCalloutExpenses = useMemo(() =>
+    expenses.filter(e => e.category === "CoHost Callout" && e.expenseType !== ""),
+  [expenses]);
+
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
-    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings: sum(rows, "coHostCalloutCost") };
-  }), [dashFiltered]);
+    const expCallouts = cohostCalloutExpenses
+      .filter(e => e.property === p)
+      .reduce((a, e) => a + (e.amount || 0), 0);
+    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings: sum(rows, "coHostCalloutCost") + expCallouts };
+  }), [dashFiltered, cohostCalloutExpenses]);
 
   function DashFilterBar() {
     return (
@@ -1159,8 +1168,13 @@ export default function App() {
               <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
                 <div style={{ fontWeight: 700, fontSize: 16, color: "#555555", marginBottom: 8 }}>No bookings yet</div>
-                <div style={{ fontSize: 13, marginBottom: 20 }}>Click "+ New Booking" to add your first AirBNB booking</div>
-                <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>
+                {!isClient && (
+                  <>
+                    <div style={{ fontSize: 13, marginBottom: 20 }}>Click "+ New Booking" to add your first AirBNB booking</div>
+                    <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>
+                  </>
+                )}
+                {isClient && <div style={{ fontSize: 13, color: "#999" }}>No bookings have been recorded for your property yet.</div>}
               </div>
             ) : isMobile ? (
               /* ── MOBILE: booking cards ── */
@@ -1550,8 +1564,8 @@ export default function App() {
                       {[
                         { label: "Bookings",            value: dashFiltered.length,                                                          icon: "📋", color: "#0D0D0D" },
                         { label: "Commission Earnings", value: fmt(sum(dashFiltered,"cohostComm")),                                          icon: "📊", color: "#8b5cf6" },
-                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost")),                                   icon: "🔧", color: "#f97316" },
-                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost")), icon: "💰", color: "#db2777" },
+                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => { const parts=(e.date||"").split("/"); return (dashMonth==="All"||parts[1]===dashMonth)&&(dashYear==="All"||parts[2]===dashYear); }),"amount")),  icon: "🔧", color: "#f97316" },
+                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => { const parts=(e.date||"").split("/"); return (dashMonth==="All"||parts[1]===dashMonth)&&(dashYear==="All"||parts[2]===dashYear); }),"amount")), icon: "💰", color: "#db2777" },
                       ].map(k => (
                         <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
@@ -1577,7 +1591,7 @@ export default function App() {
                             </div>
                           </div>
                           <div style={{ marginTop: 10, fontSize: 11, color: "#999999" }}>
-                            {(PROPERTIES[p].cohost*100).toFixed(1)}% commission rate
+                            {+(PROPERTIES[p].cohost*100).toFixed(1)}% commission rate
                           </div>
                         </div>
                       ))}
@@ -1614,8 +1628,8 @@ export default function App() {
                             <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                               <td colSpan={5} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                               <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(dashFiltered,"cohostComm"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost") + sum(dashByProp,"calloutEarnings") - sum(dashFiltered,"coHostCalloutCost"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashByProp,"calloutEarnings"))}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1633,7 +1647,7 @@ export default function App() {
 
 
         {/* DASHBOARD */}
-        {tab === "dashboard" && !isCohost && (
+        {tab === "dashboard" && !isCohost && !isClient && (
           <>
             <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Dashboard</h2>
             {calc.length === 0 ? (
@@ -1680,7 +1694,7 @@ export default function App() {
                             <div style={{ gridColumn: "1/-1" }}><div style={{ fontSize: 10, color: "#999999", marginBottom: 3 }}>CLIENT PAYOUT</div><div style={{ fontWeight: 700, color: "#7c3aed" }}>{fmt(owner)}</div></div>
                           </div>
                           <div style={{ marginTop: 10, fontSize: 11, color: "#999999" }}>
-                            {PROPERTIES[p].sholom*100}% biz · {PROPERTIES[p].cohost*100}% cohost · {PROPERTIES[p].cohostName} · {PROPERTIES[p].model}
+                            {+(PROPERTIES[p].sholom*100).toFixed(0)}% biz · {+(PROPERTIES[p].cohost*100).toFixed(1)}% cohost · {PROPERTIES[p].cohostName} · {PROPERTIES[p].model}
                           </div>
                         </div>
                       ))}
@@ -2090,7 +2104,7 @@ export default function App() {
                                 {prop.live ? "Set offline" : "Go live"}
                               </button>
                               <button onClick={() => {
-                                setPropertyForm({ name: p, sholom: (prop.sholom*100).toString(), cohost: (prop.cohost*100).toString(), cohostName: prop.cohostName, model: prop.model, live: prop.live });
+                                setPropertyForm({ name: p, sholom: (+(prop.sholom*100).toFixed(2)).toString(), cohost: (+(prop.cohost*100).toFixed(2)).toString(), cohostName: prop.cohostName, model: prop.model, live: prop.live });
                                 setEditPropertyName(p);
                                 setShowPropertyModal(true);
                               }} style={{ background: "#F0F0F0", color: "#1A1A1A", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
@@ -2101,12 +2115,12 @@ export default function App() {
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 10 }}>
                             <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "10px 12px" }}>
                               <div style={{ fontSize: 10, color: "#999", marginBottom: 3 }}>BIZ COMMISSION</div>
-                              <div style={{ fontWeight: 800, fontSize: 18, color: "#E61C5D" }}>{(prop.sholom*100).toFixed(0)}%</div>
+                              <div style={{ fontWeight: 800, fontSize: 18, color: "#E61C5D" }}>{+(prop.sholom*100).toFixed(0)}%</div>
                               <div style={{ fontSize: 11, color: "#bbb" }}>of True Net</div>
                             </div>
                             <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "10px 12px" }}>
                               <div style={{ fontSize: 10, color: "#999", marginBottom: 3 }}>COHOST COMMISSION</div>
-                              <div style={{ fontWeight: 800, fontSize: 18, color: "#0D0D0D" }}>{(prop.cohost*100).toFixed(1)}%</div>
+                              <div style={{ fontWeight: 800, fontSize: 18, color: "#0D0D0D" }}>{+(prop.cohost*100).toFixed(1)}%</div>
                               <div style={{ fontSize: 11, color: "#bbb" }}>{prop.model === "split" ? "of Booking Payout" : "of (True Net − Biz)"}</div>
                             </div>
                             <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "10px 12px" }}>
@@ -2478,6 +2492,11 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  {expenseForm.category === "CoHost Callout" && (
+                    <div style={{ fontSize: 11, color: "#f97316", marginTop: 6, padding: "6px 10px", background: "#fff7ed", borderRadius: 6 }}>
+                      This will appear as a callout in the CoHost's earnings dashboard.
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}
