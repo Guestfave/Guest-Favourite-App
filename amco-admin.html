@@ -1,0 +1,981 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<div id="amco-admin">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+  #amco-admin{ --ink:#333333; --muted:#5C6A64; --paper:#F4F3F1; --card:#FFFFFF; --rule:#E0E3DD;
+    --clay:#ED1D24; --clayBg:#FCE9E8; --sage:#3F7A5C; --sageBg:#F0F5F1; --teal:#2C5D6B; --amber:#C0763A; --danger:#B23A2E;
+    font-family:'Inter',ui-sans-serif,system-ui,sans-serif; color:var(--ink); background:var(--paper); border-radius:18px; }
+  #amco-admin *{ box-sizing:border-box; }
+  #amco-admin .disp{ font-family:'Space Grotesk',sans-serif; letter-spacing:-0.02em; }
+  #amco-admin .tnum{ font-variant-numeric:tabular-nums; }
+  #amco-admin .eyebrow{ font-size:10.5px; letter-spacing:0.14em; text-transform:uppercase; font-weight:700; color:var(--muted); }
+  #amco-admin .wrap{ max-width:1020px; margin:0 auto; padding:22px; }
+  #amco-admin .card{ background:var(--card); border:1px solid var(--rule); border-radius:16px; padding:18px; box-shadow:0 1px 2px rgba(20,48,46,0.03); }
+  #amco-admin h1{ font-size:26px; font-weight:700; margin:0; } #amco-admin h2{ font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:700; margin:0 0 12px; }
+
+  #amco-admin #proto-banner{ background:var(--clay); color:#fff; font-size:12px; font-weight:600; text-align:center; padding:7px 34px 7px 14px; position:relative; }
+  #amco-admin #proto-banner b{ font-weight:800; }
+  #amco-admin #proto-banner .x{ position:absolute; right:12px; top:6px; cursor:pointer; opacity:0.85; font-weight:700; }
+  #amco-admin .top{ display:flex; align-items:center; justify-content:space-between; padding:14px 22px; border-bottom:1px solid var(--rule); position:sticky; top:0; background:var(--paper); z-index:5; flex-wrap:wrap; gap:8px; }
+  #amco-admin #admin-gate{ position:fixed; inset:0; background:var(--paper); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; }
+  #amco-admin #admin-gate .gatecard{ background:#fff; border:1px solid var(--rule); border-radius:18px; padding:28px; width:100%; max-width:380px; box-shadow:0 12px 44px rgba(0,0,0,0.10); }
+  #amco-admin #admin-gate input{ width:100%; border:1px solid var(--rule); border-radius:9px; padding:11px 12px; font-size:14px; font-family:'Inter',sans-serif; outline:none; margin-bottom:10px; }
+  #amco-admin #admin-gate input:focus{ border-color:var(--clay); }
+  #amco-admin #gate-err{ display:none; color:var(--danger); font-size:12px; font-weight:600; margin-bottom:10px; }
+  #amco-admin #admin-lock{ cursor:pointer; }
+  #amco-admin .brand{ display:flex; align-items:center; gap:9px; cursor:pointer; } #amco-admin .blogo{ height:30px; width:30px; display:block; } #amco-admin .bwm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px; letter-spacing:-0.01em; color:var(--ink); } #amco-admin .bwm i{ font-style:normal; color:var(--clay); margin-left:5px; }
+  #amco-admin .pill{ font-size:9.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; background:var(--ink); color:#fff; padding:3px 8px; border-radius:999px; margin-left:7px; }
+  #amco-admin .navlinks a{ font-size:13px; color:var(--muted); text-decoration:none; font-weight:500; margin-left:16px; cursor:pointer; }
+  #amco-admin .navlinks a:hover,#amco-admin .navlinks a.active{ color:var(--ink); }
+
+  #amco-admin .page{ display:none; } #amco-admin .page.show{ display:block; animation:fade .22s ease; }
+  @keyframes fade{ from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:none;} }
+
+  /* home */
+  #amco-admin .hgrid{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:18px; }
+  #amco-admin .hcard{ background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:20px; cursor:pointer; transition:box-shadow .18s,transform .18s; box-shadow:0 1px 2px rgba(20,48,46,0.03); }
+  #amco-admin .hcard:hover{ box-shadow:0 6px 18px rgba(20,48,46,0.08); transform:translateY(-2px); }
+  #amco-admin .hicon{ width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:12px; }
+  #amco-admin .hcard h3{ font-family:'Space Grotesk',sans-serif; font-size:17px; margin:0 0 4px; } #amco-admin .hcard p{ font-size:12.5px; color:var(--muted); margin:0; line-height:1.45; }
+  #amco-admin .qstrip{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:18px; }
+  #amco-admin .qs{ background:var(--ink); color:#fff; border-radius:12px; padding:14px; }
+  #amco-admin .qs .v{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:21px; font-weight:700; } #amco-admin .qs .k{ font-size:10.5px; color:#C7D2CE; margin-top:2px; }
+
+  /* metrics */
+  #amco-admin .mgrid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:6px 0 18px; }
+  #amco-admin .m .k{ font-size:9.5px; letter-spacing:0.03em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  #amco-admin .m .v{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:21px; font-weight:700; margin-top:3px; } #amco-admin .m .s{ font-size:10px; color:var(--muted); }
+  #amco-admin .mtile{ transition:box-shadow .16s, transform .16s; } #amco-admin .mtile:hover{ box-shadow:0 6px 16px rgba(20,48,46,0.09); transform:translateY(-1px); }
+  #amco-admin #mt-value{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:34px; font-weight:700; }
+  #amco-admin .aptrow{ display:grid; grid-template-columns:52px 1fr 88px 96px; gap:8px; align-items:center; padding:6px 2px; border-bottom:1px solid var(--rule); }
+  #amco-admin .aptrow:last-child{ border-bottom:none; }
+  #amco-admin .aptn{ font-size:11px; font-weight:700; color:var(--muted); }
+  #amco-admin .usel{ border:1px solid var(--rule); border-radius:7px; padding:7px 8px; font-size:12.5px; font-weight:600; color:var(--ink); background:#fff; outline:none; width:100%; }
+  #amco-admin .uin{ display:flex; align-items:center; gap:4px; border:1px solid var(--rule); border-radius:7px; padding:6px 8px; background:#fff; }
+  #amco-admin .uin input{ border:none; outline:none; width:100%; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--ink); background:transparent; }
+  #amco-admin .uin span{ font-size:9.5px; color:var(--muted); }
+  @media(max-width:560px){ #amco-admin .aptrow{ grid-template-columns:40px 1fr 64px 70px; gap:5px; } }
+
+  /* deal rows */
+  #amco-admin .drow{ display:flex; align-items:center; gap:14px; padding:13px 0; border-bottom:1px solid var(--rule); cursor:pointer; }
+  #amco-admin .drow:last-child{ border-bottom:none; }
+  #amco-admin .dswatch{ width:42px; height:42px; border-radius:10px; flex:0 0 42px; }
+  #amco-admin .drow h4{ margin:0; font-size:14px; font-weight:700; } #amco-admin .drow .sub{ font-size:11.5px; color:var(--muted); }
+  #amco-admin .status{ font-size:10px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  #amco-admin .status.funding{ background:#EAF1F4; color:var(--teal); } #amco-admin .status.live{ background:var(--sageBg); color:var(--sage); } #amco-admin .status.completed{ background:#EEE; color:var(--muted); }
+  #amco-admin .risk{ font-size:10px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  #amco-admin .risk.low{ background:var(--sageBg); color:var(--sage); } #amco-admin .risk.medium{ background:#FBF1E6; color:var(--amber); } #amco-admin .risk.high{ background:var(--clayBg); color:var(--clay); }
+  #amco-admin .bar{ height:6px; background:var(--rule); border-radius:99px; overflow:hidden; } #amco-admin .bar i{ display:block; height:100%; background:var(--sage); }
+
+  /* per-deal */
+  #amco-admin .crumbs{ font-size:12.5px; color:var(--muted); margin-bottom:6px; } #amco-admin .crumbs a{ color:var(--muted); cursor:pointer; }
+  #amco-admin .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  #amco-admin .stage{ display:flex; gap:4px; margin:4px 0 6px; } #amco-admin .spip{ flex:1; text-align:center; }
+  #amco-admin .spip .d{ height:6px; border-radius:99px; background:var(--rule); } #amco-admin .spip.on .d{ background:var(--sage); } #amco-admin .spip.cur .d{ background:var(--clay); }
+  #amco-admin .spip .l{ font-size:9px; color:var(--muted); margin-top:5px; font-weight:600; }
+  #amco-admin .kv{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--rule); font-size:12.5px; } #amco-admin .kv:last-child{ border-bottom:none; } #amco-admin .kv b{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; }
+  #amco-admin .net{ font-weight:700; color:var(--sage); }
+  #amco-admin .irow{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--rule); font-size:12.5px; } #amco-admin .irow:last-child{ border-bottom:none; }
+  #amco-admin .ava{ width:30px;height:30px;border-radius:99px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:0 0 30px; }
+
+  #amco-admin .btn{ font-size:13px; font-weight:600; border-radius:999px; padding:9px 16px; cursor:pointer; border:1px solid var(--clay); background:var(--clay); color:#fff; display:inline-block; }
+  #amco-admin .btn:hover{ background:#9d4626; } #amco-admin .btn-ghost{ background:transparent; color:var(--ink); border-color:var(--ink); }
+  #amco-admin .btn-ink{ background:var(--ink); border-color:var(--ink); }
+
+  /* builder (new investment) */
+  #amco-admin .cols{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; align-items:start; }
+  #amco-admin .sec{ font-family:'Space Grotesk',sans-serif; font-size:13px; font-weight:700; margin:16px 0 9px; } #amco-admin .sec:first-child{ margin-top:0; }
+  #amco-admin .frow{ display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+  #amco-admin .afield span{ font-size:11px; color:var(--muted); font-weight:600; }
+  #amco-admin .ig{ display:flex; align-items:center; gap:4px; margin-top:4px; background:#fff; border:1px solid var(--rule); border-radius:8px; padding:8px 10px; }
+  #amco-admin .ig input{ border:none; outline:none; width:100%; font-size:14px; font-weight:600; color:var(--ink); background:transparent; } #amco-admin .ig input.tnum{ font-variant-numeric:tabular-nums; }
+  #amco-admin .ig select{ border:none; background:transparent; font-size:12px; color:var(--muted); font-weight:600; outline:none; cursor:pointer; } #amco-admin .ig .pre{ color:var(--muted); font-size:13px; }
+  #amco-admin .riskbtns{ display:flex; gap:8px; margin-top:4px; } #amco-admin .rb{ flex:1; border:1px solid var(--rule); background:#fff; border-radius:8px; padding:8px; font-size:12.5px; font-weight:700; cursor:pointer; color:var(--muted); }
+  #amco-admin .rb.sel[data-r="low"]{ background:var(--sageBg); color:var(--sage); box-shadow:inset 0 0 0 1px var(--sage); }
+  #amco-admin .rb.sel[data-r="medium"]{ background:#FBF1E6; color:var(--amber); box-shadow:inset 0 0 0 1px var(--amber); }
+  #amco-admin .rb.sel[data-r="high"]{ background:var(--clayBg); color:var(--clay); box-shadow:inset 0 0 0 1px var(--clay); }
+  #amco-admin .out{ position:sticky; top:14px; }
+  #amco-admin .ogrid{ display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:12px; overflow:hidden; }
+  #amco-admin .ocell{ background:#fff; padding:11px 12px; } #amco-admin .ocell .k{ font-size:9px; letter-spacing:0.03em; text-transform:uppercase; color:var(--muted); font-weight:700; } #amco-admin .ocell .v{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:17px; font-weight:700; margin-top:2px; } #amco-admin .ocell .s{ font-size:9.5px; color:var(--muted); }
+  #amco-admin .warn{ font-size:11px; color:var(--amber); margin-top:8px; }
+
+  #amco-admin a:focus-visible,#amco-admin button:focus-visible,#amco-admin input:focus-visible,#amco-admin select:focus-visible{ outline:2px solid var(--clay); outline-offset:1px; }
+  @media (max-width:820px){ #amco-admin .hgrid,#amco-admin .grid2,#amco-admin .cols{ grid-template-columns:1fr; } #amco-admin .mgrid,#amco-admin .qstrip{ grid-template-columns:repeat(2,1fr); } #amco-admin .out{ position:static; } }
+  @media (max-width:600px){
+    #amco-admin .wrap{ padding:16px 15px; }
+    #amco-admin .top{ padding:11px 15px; gap:8px; }
+    #amco-admin .navlinks{ width:100%; display:flex; flex-wrap:nowrap; overflow-x:auto; gap:16px; padding:3px 0 1px; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    #amco-admin .navlinks::-webkit-scrollbar{ display:none; }
+    #amco-admin .navlinks a{ margin-left:0; white-space:nowrap; flex:0 0 auto; }
+    #amco-admin .drow{ flex-wrap:wrap; gap:8px 10px; padding:14px 0; }
+    #amco-admin .drow h4{ font-size:13.5px; }
+    #amco-admin .drow .pact{ flex:1 1 auto; }
+    #amco-admin .mgrid,#amco-admin .qstrip{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+
+<div id="admin-gate">
+  <div class="gatecard">
+    <div class="brand" style="justify-content:center;margin-bottom:14px"><span class="bwm">amco<i>investors</i></span></div>
+    <div class="eyebrow" style="text-align:center;color:var(--clay)">Admin access</div>
+    <h1 class="disp" style="text-align:center;font-size:22px;margin:8px 0 4px">Staff sign in</h1>
+    <p style="text-align:center;font-size:12.5px;color:var(--muted);margin:0 0 16px">This area is for Amco staff only. Enter the admin passcode to continue.</p>
+    <input id="gate-pass" type="password" placeholder="Admin passcode" autocomplete="off">
+    <div id="gate-err">Incorrect passcode.</div>
+    <button class="btn" id="gate-go" style="width:100%">Enter admin</button>
+  </div>
+</div>
+
+<div id="proto-banner"><b>Prototype demo — admin view.</b> Sample data only. No real money, investors or details. <span class="x" id="proto-x">✕</span></div>
+<div class="top">
+  <div><span class="brand" data-go="home"><img class="blogo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAYAAACLz2ctAABPa0lEQVR4nO19eXxV1bX/d+29zx1yM4cEkjAPoiCTYVCrXqzz0NrBSydbX23VzvN7nX8hr/bZ4bV9be0gtdN7bW251rZWa60DRG0tkAiCBFBkJiGEzMkdzjl7r98f51yIGCDJvYHoe98PfCA35+6zzznrrL2G71qb8L8MDBAAigMUQ5SAek0An+BwmgcUX1lUVDxPhsrPDoaqyiHKCgRFLCGE440FABAANLPbYty2fa7Ttsd2jjxl97fGE4lOAOlBBwdgolG1tr4eywHjf8Y48Xxec6BTH/LqBwO0FpDLYzGmeFwf//tvlZZWvyOvcMZhNuW9LmaWCXleuZLnGGbLAYeZEQIhYoHy84VAiAgC9DIpIQAajB5jkDLGZiBBhD4BSgYAJ8ncccC461KGmmZZ6uBu47Ze1Lx3O4DUwLkIAOtraqyaxkb9v0EYX7MCyIAAooJQ7w78fPXEiaXTtazoMPqCuVbgOmaU2+CZlVJVBYlg4KkizZlx+OhnLjMMYAA2g53Tu5kkJUCSCAKeQAEEAiDJO0aC0KwdnWJsKRKipVk7W3bZ+qE5wdCusw7uPHD8dawFxKWAxmtQGF9TAugJHQgAk7+kAcAdpaXVbwgVvalYYAGDrhon5GQGECZPi9nMSDFrBjNAmXtCA8Yd+OFJ7xm/7J9XCAz7f1gSqTwSUATYDLhg9GuT6jL68TwptjSkkw+5bSXrV6DJzkzGADIOYIV3ba8JYXzVC2DGpkM0Kqj+mLb747iqRecGA5cI0E0lQs5WRAX5JNDPBilm+AJqGEwAEWWU1embN8PTpkwgYkBIgAqFAIHQpl3NQFuHMXFJZu3sg3sfBpAEfHsTkADMSezXVwVe1QK4BlF16YAl9sGKydOrhbiiwpK3EPO5lcrKSxoDx9MwxjAbEEkxRq+bAWawIYAlSEkiFJBAHxvYhl9oY/1EGuaXCw7uXQdf8BgxuRJxrhug8V9NGJMP4mTwNZ4gzyYCALVmfPVF063g+yzQdeOlKnGYkQbDNsYlIgFvCX1VXStnBIzZCCKEiaRFhD7DSLN5uk3r+xJk/2pZc3O7f7yIA7Ti2H15VeBV81AGEbzAtqppNxWQuKVAitflESHJjDQbTZ7J9qoTupOBfbuPvGVaaAY6jHuk1/Cvthn9kzcd2tfkHydxnA08lvGqeEDsOZAaAG4uKir+RF7xv1QI+dFSqaYLAnqNYQJrg7G7vOYSDNYAUYBI5JNAl9F9fcy/P+Smf7D00IEN3jExCcTHvI04ph/WakC+zY+IfLakpOjmcOG7SqX1iXFCzLKZkWTWBiBxmh2IsQLfpdYKpAqERJfWdh+b+E7XufOy1v1b/WMkjWGveUwKYC0gVgIZT5W2Vk+9qYLEZ4ulmusJnnEBEqfbcx2rYICZ2SgimS8EurR2Olj/5K/Jnjs/3tFxIBPCoTFoH445ARy43P6zctLFk2SgtkTIywhAH2tNZyBk8mqB50XDSEAWCYkj2jlyyJhvLGje81144cYxF7oZMwKYiecRYH5TNqnq/JD1pTIh3h8Swuo1xjCA/61L7XCRWZqDJFSICG3a3bjZdj579eH9j/q/p7EihGNCAAdqvXWVk981RVr/US7V5G6joQHzf4I3MhjfG84XQqaZ0aadH+7v4y9e2r23a6wI4Zl+sLQGUATo2rKyqherp/9qvhX8VUSIyR3G1Qbg/xO+kUN4QiZ7jTGaWc9QwQ9Nisj6jxcVFQOgGCBra2vP6P09YxqQPe+VGUB9+cSr5gSDPy6WcmqPMdp/O/9P8HIIDehCIeRe1/nxbw7u/uhcgDNB61gsJuPx+BnxlM+IAA5YcuWLVVPvKJXqs3kkqJ+1SyB1Jub0WoYBTD4J6tB6b93BjoWr0NkNALdcv+RvQuGee/64YbUf4wZOsxCedi2TEb5/LSur2l89/cEZVuBzANDLhv9P+EYHAgwXTLuM+6lV1NktANx81eIP7+nLu2JXV+B3sdcv/oIkYgAci8Xk6Zzb6dSA1IAatRiNzj8qJ79uqrR+Pl6qWZ1GuzhGlRvz8EMdGIIBPyZSgczsFkmp9jju72c177qRAfridbOqNvWX7ei0ZYiZEQ5IWR2x/3bxRHfF7asau2MxyHj89MQMT9cNIt+uM41VU94+Rapf5JEI9rPRAnRa37ihgI8JFzOYiT1mMhEJCUjlk019Aupx3/UIrBqAy6yZ2SDDSAUd/drpEE4DcJAICcPdj/T3L3hPR8t+SeC3XrHkDy3p8Ju042giktqwGw4GVGHAXV/EnbH/eaxpXzQaVfX1LyfzjgZG/SYMjO81TpjyybMDgW+7YDgMTV5gdEyAAZNhnkiQEv7kMvR7AEgx44h2HUPoEYw+AK6gY0xlBgtmCjA4LEAFJVKG80hkxkeaDRx4KtQFa8PMRKOX0WGwLiApn3dSH6tp2fd9ALj9DQtveLEn8sdE2mghjr38xrBrBZQKwN5/TrjjXXc98uJTp0MTjqoADvR0GydM+cbcQPBfk8zGBdOZJg0c494RARBhIuSRgANGu3bTQRJ9fcYcbtX6iQDw0gQlu5LMPc859sGtKfvI45zqfLy31wbgwlN4AoC4rKAgvFiIghorr2xJKDy5iGRhi+sU9cNMHSfkJSVCTkkajhRLEQ4LgZRhJNj4bBc2AOXEHDGAKRJCNGvnn/96YHc0FovptYfXhvfJ6c932IHJMK7/eAbcE2ZNQskC5fYsKE2+7xt/2HTfbTU11qrGRifb+ZwIoyYEfj6XCRDPV05dNcsK3JJgo7VHqTpT3jfDX1YVSBYIgbRX54EjWr9AwOMM7Hsg3fNIB9GLdW1t/TiFrXf8hZzKMFw9cWJ4b8Kddn04dEUBxIwU+OJxQi60iBDy+X42sqOUMcAWkXHYmEY3ccFVLS2NBOAdVy3+3oFU3kdt23EFncDhYzYaQpSFGeeW2rd8476Gn992W421atXoCOGoCAIfs3NkU9XUn5+lgjf1sHaNF3Q+7cgk6yWRCJGgMAHNWmsFrD3gOmt72Pxxs5PY9/GOjp5BviuAGAGHaS2ANtTz1iGEKuYCVI4oLT/6Sb0ZjKN3G5D3vqqqiTDWGyZb1hWazUXV0oqkmJFiA83sgoanFQ2zLpFSbrfT3zy3Ze+/MUAfeXPNohc6A+t60yQE+WUMJwCBjcOCy/MgzypJfeA79zXeXRuNqrpRsAlzLg8DbD5qqpr6i1kqcFMPG5fPgPCxp4G1AFSRkOg0GknDW9q1+/O0wNqlzXs3vuz4WEwifphWot7UHVcS6Wn0qAAq+FQ8OwYEolGxtr4eg1SzUS1AKxEViAJ03EN9csLkOcUSF5XCui0gaNE4IUWPMXDBmgFxKtPFACZCJNq13lWb6l740yPtfVgJevPTy9a32YEa47qaaEiOH7sGpjxfyNnF6Vu/fd+Ge0bDMcmpTAx0OJ6vnPrT2YHALb3GuOY0h1ky9l2AhIwQoUObVAJmdYerf3feob1/GXDc0So6eML6MqHyzQjCIAzjGBD44ezZQdL66HUd6g6Yc9uakjiO9jTgPK8Q3KNFVQAhFsPAuuVnxk9ZPl7JFWGid5dLmZ/0tKIG6ESCyIJhFJHcaKffcEnrvgcB4F+ur/nU3r68byVT7sscj1OBAHYMuCJCYl5x4t13/n7jr3IthLkUCloDyEsBt2H85P+cHwx9uvc0a76XC55Am3a7eoz+xXNp+8cr2pt3+McQvPoJnKh+IlPIfqnnYAAAaouKpr6noPQyDZqY0HpOoRBz84WYLD3hYgLIYaS6jX6pH9hcQeKlTvDOmw/ufrQR6B4w9kkpUYOVlq4qrZ74+pD1wXwhbymXakI/G6SN0b4HffT2GkAXCyF3u/Zvzzq45x21tbUCTQ9O/GdbcGOPTUUEIwZUmA4JnhASl4W1OTev/63ffGjLA7kUwpzJhi9o7jMTJn76vEDefybYuPo0Cp/xWDNUKCR1a93dY8zPXuLkf13R0rLPn1+mOOlkYQVixATB00L3llRNmh+2rigS8jaLaGaRkGVBImhm2MxwvBLfo18WRAiAYJH3/y5jYNgc6DR64xFH//TNh/c/2gIk/PmckiC6GpCxAYL4YPmUCWcH5EdKhLi1WIiKbmOOsoUYMCEi9BvTXa8TC2MtzfsJxLErlzzQmgq/wfFjfiO7u2wMJBUot6vKbX/9L//x4qZchWhyIh+Z8shNVVPfdpay7rWZjXuavN2M1isUUiYMmz6j792mE1+98tChbd7vo8q36U5apDNQIP5cOrF6Xijw6XxBbyuVqirNDBcMm9k1zCAC+Zpk0GXQD14bIpJBImGBwAT0GL35iOv+/M92308/297eywCtBGgIcyMgKjNdHu6rqJi+OFDwb4VEt+QLYfUYrRlAkZDyuXTyA0sO7b+bANx23cIbX+zP/20irfmEXu9QwawhlYxIZ8fkYM+FP/1bU0ctIE4191MhawFZjZhcgbh+snzy6+aFAo8JoqDDzKeDzWIAYxGJCBE6Xb3+AJsvnte8+zHAE6iVwFDqZWk1IPzlOLh1wrTPjLPEp8YJVZpgg7RP//eDZsO6X3x0mp59mUdCSQI6XXdrO+s75jTv/S3gabqhlFMeXxnYUDnt4koh7ihX8hIFwm7Hrv968+4rLo/BoHxO+BdNBU3djjXpWOlMdmBm17IsVRG2//n9yxOXf2z97NTqeHaFT1kJIHs3w3xi3LjKTwULnymTakqCzWkhkDLgFgih+oxOtGv99bOa99wJwPGX2kw9yanGyISL+JnKSRdNkdb3xktrUR8b2H55Zy5fJOPbfnleWAWHjP79dqf/M9e0tu4ZypKcwXE1M2Jb1dRPjxPyk8+mnDdcdWRfIwC848qau1rsyIdTKccVInckD22MGwkFVKXV/+t7H2286cteeGbEfWtGfHMz3tsaRNUngoW/rFJqSoK1Hm3hM15mhYuEUB3afa6+v+/Ss5r3/Ds84ZPkPeShCJ8QnmbCpqrJX56tAmvKpFrUabTrMLPwMhI5vRbhvbAywWz6mXmSVG+tsfLXP1Ex6QYCdC0GpJhPgjr/Glf7Ds05zXu++fekvfgfH37vRgD43Ftrlh1OB29NpV0th+H1DgVSCJVIO+7BdPhdb3j9wvfX1de70Wh0xOfI5gYLAnRZ5b47pyjrii5j3NEmFhiwCRBRPgnaYds//Hay++K3dLSuZ0QVn9rBOIrVvqCeB+TtmzgjPkeF/p1AqscYQ57jNKq2K/n2cZfRbkTI8oXB4P3PV039ch1g2CduDGUcf9kmBuSb2vc3o877fGuH+ElaqwDB8FDHGg4EkUw5rB2R/4MvvmXRJfX19e5IaVwjmhwjJglxvXZC9bWLrPCfGIA7yrE+A+gIkUyySRzU7kfnN+/9GXmfi6FovGNz947/WmnpxHfmldw3Saplndp1DNGoC95gMF4VGxUKQQdd/bMpB196n998aFg1GwNSn/zGy8+vtdla2ZkwkDAGlL399wowawgpi5S9YylaF9bV703hWEx1yBj2xLxlIm7uKi+fMFuFfmoRKWfUhY/dEiFkm9b71qUSV81v3vuzNYAyftB7qONkluhvFo2f9q5wycPVUi07YlyXiawzIXyAtywbAN1au5OVumXvxOlxAwT8AM+Q5+Qvy1xbWyseeOyfddPzU+8tDOheSCmYOfeMFiLJRusEQrN3hCvuZgbVekvxcOOMw0NG+22vnrZ6hrJiXUaPKqfPAO44IVWz666/N9Fx42c6O/dnYo7Dm7en+e6sqJj+rkD+X6qkmt1pjCuAMcPCNmB3nFRqv2vfP/nA7hX88ra9Q0bM6yOob46eff5+U3yvQ4GpjnMSAkIW0Aa6ICTkOOq/4bdrNj7g15cMWeCHpQE9DRLXz0yYfNM0acV6zOgSShnslgmhDmn38VV9R67yhU+OVPg+nz+h/J1W/h894dNjSvgAQIBUu9bOJBV4y97q6b/0BU8M146LAzoajapf1m//Z1mwJ5pvuc8FLEsZw26u1bwUTH02uI+CP/lWbFZ1HMBwKu2GfKAf3jDryqdMmKasr/vJ8VFbthhwS4RSzVr/5c146Q113d1dq0fQXsKbI/PdlZV5HyjO++MkZc3r1NoVY7T+hACrXWtnsrLe9VLVtO961zv8pS3jGMQfa9o3RfRdWRJ0ngsGlNKGc8xoIUGsTY8TqHi6o6gO8bhuamoa8lyHpQEJ4HxFd1ZIVZXwuoyOSsjFAG6ZkOqwdh/+5IGX3rjuAJJ8LFg8ZGQyCCtBdAUFfzlZWhe2Gz0qS1EuQYDVabRbpdTH1o2f/FFCvcsjuNfxeFzHYjH540c3H75gWmt0XJ77bDDgacKczpdI2I6rExx6321Xz7ssc96hfHdIF5VZwuonTLykWqmbu43WoyV8GtBlUqpD2n3sN0i/9feAHq6nm8FaQBLq3WsmTP7SJCtwY/sYXHZPBANIGzCzAtZ/1k+YeAkBevUIShgywvC5Vbu6K0r7Li+w9CYrYCk2OXVMSBCoJw1udfK+u+ZmhOLxuF+7dXIMUYhqEQXUJBH4ekgIcplHpeLLgHWJELLZcRt/2d9x46cPHEjqEQofIyYvBdx/TJhy9Vwr+KWEMS7GUA3KqUAA2cwIkQicpYKrH62cPjkGcG0WmvBHv9nSadmpa0PCeUEoJcGDd/sf4YQFa2163MDcu5sXfRCAqR1CgPqUQpRJETVUTfqXeSr88x6jjRiFuJIBTB6RaDd6/697+y/5fHfrHh6h8GWS5N8vK6t6a7h4Y5EQFQnmV2WPGQ3oEiHkS7b90Nkte67PhJIwgtRXhsHynovOmt8sSp/uc2VEwGSIFTkAG4ZAScDtWl7eO7d/TtPhlXWv5FkOxEkfiO9k8NdKSoqqyPqyAUzO5joABuAAiPqNcV9IJd/1+e7WPauP3ejhglYiRgzQVcHCH5ZLWZFgM+opwtGCBGSP0e7MQOC6zVVTPk2AZsRGdC3xOHRtNKr+++kXNs8rSX2gNCyEZsphK18SbAwnOFi6sSf82bo6mBWxk8/1pNKU0X6bJkz51LnB4Lc6jdFiFJYxAtw8IdQu27l1Tsvue9YA6tJhhlqOn/MzFZNvXRIOreoyZlTKP/0CJz81nXlZaVS6tRqALQBpRvpJJ7041rp/azZUqAyh9G1XLf1Cayr01bTjOgRYuZquYUJxyCQWVvTXBM9+886mpiY6UWzwhDcro/0eqKwcVy7lp1IexWoU7D7oQiHUi7b94zktu+9hT/hGZCBnQkUNldMnzwxYX016GYCczdkXOs2A9tNnskRIVSKkKhVSFpAQHj8RmkcoHINBAOSATakUocXK+jEAa2UsdiI+4ilRX1+vo9Go+t0j6/+jCImHAkpZOXRKBMFwUlv5uzpCn6yrqzNz5swZyRIcEwSYKbBuGa9UddJL1Of07TaAKSAhD7nutn+kxOfYc92z2pKKAI6Av14mZXkqh6EiBmsJUISELBJCpti4exx7/V7HfWi/6/55r+M8fEA7TYqICoWQ+SQEAGNyJIgCJLuN0ZVSXbRhwtRbKB7XIwnNZC5n+fLlJhaLyYuq9YfzLaeZhfBT69mDiETa0abLlu/+Smz+tLq6OnMi5+lEbxARwNcBeT+cOH1HmZATU57HlDMBZIAVwC5YP9mfvugtHQfWj9Tp8Mfzlt4JU66dFwg8ZHssTJmt+vO1HhcJITq1dlPMTxzU7qoCYNu5h/btBGBnjr28pKToF+Gy6QfZvqhaqvcVC7lAgdDLuTFdGDBhj3bf9rukfd5H2vcfAobGfRwMGafk3Zeee20rih/qSRkjKDfP2Bh2wyFLVQQT34n/reFTF18yeB3JoM9nTTSqLq2vdzdXTr3tLCtwd78xGpRbO4qZdbGUcrttf/Xclj1fyuSYRzSWfx3fxsTQjdWBjRVSze7LATE2w7gOE+GI6z5wwNFfW3Z47zOZ33sqI5N2qnuFIPxzwuQbJ0qrtkqpc7uM1noIZZWnnhPrMqHkC679i7MP7n7vUNnUJ0I0GlVPP1nvvvmyJT9tTYducYdetnkqsGGikqDbfe2k7hkf/Z/t7RiELTPoA1peX6+fx5xAIYkPAQxDnFPbjwEdEVI2u87Wr7Uk7/QqxeIjVv9rPU3Hl02QH6xSanaf0VkLn/braw1z33N26vbqg7tuWHZ47zMMSP+v8Ng4dcb76+10uPrY7+n8Q/vu+1Cq68IdbvpHikhaAJkszAvAW4q7jDbjSbzzr+MnLl3h2ZsjFpi19fVaM6g81fqZQstpgZACuVmKCTA6xYGi9e2RWwFgMOLqKx7SakAKgI+M679snJIL+jx2cC6XXkgANjPvtt1P/Qqt/XEMn/GRQS0glgPmrvLyCeOl+jeb2VCWoSKvoSOJJJtDW930NUtb9q1iQGRy0f7f42shmOB1HfV/zwyoP7e3955zcM+HXnDSt0nAsTw1mZUQGjDnCxmYqayvYAQcvIEggGOxmPjR0/s6yyzn0xGLyHB288tAAGRr8JGEfM8jn74iUl+/NtNDZ+AxL0cMMTCA6oB8X4iIgVxzyVjnCyFbtfuHaNv+R9cgqrJZQlb6nMBLVeRfK5Qan8iyIMoLiAuRYG7dZNuXX9yy/2lGVBFghjtPAlyf4SwXt+z7yTbtvEcwmQCRyUYICSS7WZsJUl359/GTryWPST1iLRiPx000GlX/Vpj8fR6lnpJSSuSCQ0gkXNc1LgXPuXdrR9SrvY+9TDu8vDsSIAhx/WDF5OnFQlzWbxjIId2KAZYg0aG1vZ1TXwTAy1E/YnWfCbs8M37K1DIp3t9nTFahIq+2FnDZdDcm7esua92/1RO+rIqw2RcQtbR572+fS6c+LAApwSY7NUNsgXiiUl+EF8PLhn7PFRX1fG68ya4OO58LS200Z7uOeBAEJB1wnyM/hkFeuuM1BRGASiluLJWy2Pa2Ds2h/ce6UAjqZP2zN7a0bOeRZzt81IIALpDiE+XSKrQx8lCR93LAGCZqSNm3XnVkX6NHfM1JBwD2tGFUXXx4/927tfOjYqEkRhhsBwACZC8bUyHVBRsqJ13r38cRa/54HB5z5i+b/lEg3d8HAopMDrQgAcIYg05HLfmPt519VjwezxRfAYNMmBmg8STeaTNzLoN+DLAikh1a9z3fl/gme0XZI1YCtYAg1Jk/jB8/dZyg9/Z5PaazqfIzRUKqZtf50WVt++IjYV2fGvWaAbG9KO8Tza67IZ9IZRsnFADKhfVFeCyfrJRqPB4HA1QVTH4lCJfZ2w4tS0VNpI3RpKzSxo78KwDQ2mj0lQKYyb0+Nn7iEotodtprmphD54NNEQlqZ/2rG7sP70KWVfV+JgBny7wPlkur0PYC5SPS1sbbzEU0a2fbd1rS/+ovZTmvoyCA4wCtaGqyt6YTH+xn41g4GmscyXiin7WukPK8ZyZMuRIAe7tkjhgaqKUfPLxlS750/xSwcqMFpSDRn9IMiJsFgQfGA48KWMz/t1LIyyuUCrnMbq6WXwY4QERdxvQfcJwfMUDx7MYjisd1bX7luHxB7+s3hikLho4AYDPTbjf96VVoScAzXXLiCR4PL2wSVVcdaWk8qN1vFwghGCOmRZEGYBHJ8ZI+4c155OEsAIjFmggAjQ+kv2eRdjg3zCciMHWk5LwPXzVzBnAsdnt0cI9lAYoI8c4EMyM3wcgMTJgEtRnz+OWHD24GstvZe63v8b21IPi+CVKV+bbfSLWfLiQhDmn3TxcfOvgwo3bE2Zihw1uK9/Xz1w9pd3+el0Me0TkFSPYaY4qFev3j5ZMv9MM/WdiCcQ2A7n7kubX50n5WeKtwtveDjDGuVCrUo0reDgC319Qob/4YkEkoLJ8RJjHLYR5xovtEE9AMOqTtH+UgNUbLAf3f48dHSoW4WQ+vevH4sdgCqNtoe5/jfNkbqM7/1ejB01Qxur57X2eL0XdaXguQEZ/TMJtiIeVEJd4PADgu1DFcZEIlJWHzrUhQkDHZv5BEQEoTWrqppuE2WKuuv14DvgA2+tJ4Q2HkzUVCBjSMzuHya/I9DdOUR/pJk2XgNDPns4R1RblU5/Sw4ZHSrRgwhUKII1r/5orDB7ZgmHXG2YAQ1wzQ25v3/qxZuy/kEckRM2iIZI8xKJAidk9ZWVWWRAVk6PQXFPauEdreTV5cMDtniUjZjotwUFy/MbSsFD5BQQBAjS+NbMTCINGIjeLBQGAjCHDY/HFxS0vCazOW1fhMAI8TgQ8DYDHCsRhgi0A9Rvft0M53fLs092zbk2AtonInkG5n/R0BAo1wqSOAXBhdLlX+66yCW7yxs3IgTTQalbff+8KR0qB+wpKEbOllDEAB3JFS1uPP988HgKaY33aM6urMsxNmlocEX9nr7auSE/uPARYg1a21aXCd3wHAyiwCzxlP/fHy6gUlgs5PefdkhDeaTYQEHdbmsRsOH9wMxIZddZctlnu2IK1O9tzbbtz9IRIj14LwUnx5Uq64u7Iyb7lv0490rPr6egOAgtq52xJMuZAJBhshCXn5ee8BgDmHo8d27jnkJiaWCDXOzi3xlINE6GWz6Q+HD24FgLostF/M99UrlHpLqVD5NvOITQUGiaRh2q3t7wNAHNn45SODvxKIr3d2dndq/bMwCRp5SIZknzGmTIpzFxjrfP/jbOKiDIBXzOnbkSfSLzGJXOwvzMyElzpEdS0gmioqWKz1J1mo5HL4J83yJANPp8Mk4DDujwPaJ5xmkQONawBWkZDv7s9CUzNYF5OkDtbrrmyd8BR7Xvlpsf0Gmw4DtNOkfnlEu50BIjFSIWQAQSIqU+p9lOWzJIBro1F17fd39jDJP0aCEoazC8wLIpl2NCKKl42/6ew58Xhci+XRKABgphW8LEREI7VDBoMkkp1a273MDQCQjZJZg6gCgA0TJt9QIuXUtMf3G5H2IwZcMHqM/gWh0YFHExpVz/eEcwEMEBM3tLbu7mXzSJ6XgR2pKSBShhEhuu6XJZWTBXBCJvJQMLeiggHgrIi90bhuVoQHHwQ22shgXn1n0TgAENKLSsukNuXeK5ObsjcGTJBIpMCHFrfsqffiOiMPki7HcrMakCVSvCfiLVUjZU6zJYRs127HXcmeewEAXofPM4g4A8B+16xKeyGwkfbaozQbd7yUReeFgysYwMoBaa/hYoW3iTX2Hz58vyDdIwQJZPGiMjwjvs8Gd7cn5wF+a7D7x1XNsIhmJ5lzln4jzwGBzbwdQMr42xmMcOKCUGecooophSSv7jIaI99bmHUBCfQbc++qzs5unxBxRrTfwEkRgDWtkb+3ufq5/CxeMBCJNDMKhbglBkhRX59NQyIGgD+sO5CsCOkd7D3CLHPDIGamqtLgmwA/eb/MCk6pUrLIYeNmSxnPgMFQBOzWzh+PnnqEWAvvLV6cn/epcVJaBmyf6juDz8mjg3Vrk+qA/u1pjbmcBF6qIarq0GQnmX8n6ZUb4wxnuIQx7nipzrm1fMoNDOB3WSydsVhMugy09PK9lhLws39ZgQA0p6xyeGE0YI+rJ+TaAvdTQpglrBeyHWs5lhsA0IY2dWqTKBQyAI/sOdy3kcMkRBe72y5o2f+03+DyDC+/GXhmwBPJ5G86tU4oIjXc6zN+jLRMKtXuui+FlTnMAMWy0PBzDh8mAJhbLVsLAgxXZ1ueQWAwuhMmcsvssgIBAELSubm0/wzAARKq2XU7nnKcPf7HWXhkdSYWi8k5LbvvebQveWGL6z6ZL4QSnj8xnA6pHCBCu6t/5l/omOmWkKkp+UjXob2dxjyah+ElBAygw0SkQGKX6/zo77320otb9j/tjz1i/dJUUc8AUOl0bE8n031SimxpX6QNI2Jh0rRzyi8QAFCt5BLtDZkTASR/1x4N3v6Otv27/WBjtlw1TQDe3nXwuSkHd12+w07fYYEQIhJmCGUD/u7hos24RxJCPeBP5kzbfsfB6wOYNPpX2luehiQ4PqFCJozp2m6n3jbj4K4Preg50AEcve8jfq7xOHRtba340p9e3NSvaaeSApxdWo6MMToQsKyeUMF0AQAR0PjcPgmPzBoh0UWA0V4IZSSnIAComDZtfHTBgv+6beKsagC4u6YG81v2fnmHnb6+z+j9xUJKPgV5VIB1HhH6Na+9uGXXPq8M9IzF/gYFeZkR/MHue7RNu7vzSCg+iYngLbnsjvNqbJ5qdOyLlrXuX71mSjQEABfNm1dz4aJFdwJgL78wMmQaTk4spvRIxxgIQeC0IezoVEExBQilmQO5GDgDAsEASMO0ZSPYmTK+yWVly6m45ON7q8ueuG7uwgW3NzY6tXPmBBa37nvo3t7+S1pc96kyIRW89NOgp2SQTDHTLjv9MwB0JjIfQwADEHUdHT29rB88medgAGMBlEdS7XWcuycf3PX6a1r3b727psa6dG99atG8eZdxfv5fdSDwidmzZ08lIkaWJkexcNqy+X4GBMDRwOFOnScuCpeOM0Ceye1qJNLM2Ok4G7wf60c0eIUfCAWwVLPRvZY6q6cg/Pfr5sy7ta6pyW4ArE92t+657eCuK3Y59qoQCak84X+ZZmOAQ0TUrvUeLd0nCeDYGNN+GWRei0M2/3eSzaB1HgasI0TCZbabHPsTU5t3f2B1LMaMWnF7Y6OzaNGifwsXFPwVQpQGg8FQfn7+YgCIZhETBIDubrshm+9nQABpZhRZzlyxNBAqZ1DEHP1dTkCagQ42O/yfR7T8xuNxPWfOnIBS6kY2RrLW2pUikigtWvWGJUvuqvGX3YJYzJ3RvPv2553UxxwY5B1vFzK7eSRgG45f1drab6JRNQZif4Nihb9ZTao48Hwnm/XFQtDAazGALhJSJo1paXBSV5/Xsue7DTU11op4XE8Y/+Pw0qVL783Pz/86ESk2RjMzA7gGOEowGDGa03JdlpfngUhozSgOibninDxRIcD5OsePw4ARMqoz23GYeRYRVRtjACJBzJw0xu0Nhz+8fPHSR98x/ZxZ8Xhc/2Xm1cFlLfu+f9A4l6cNtxSQlMZbkqGIVLtxnR3G/j0AIMsHMcrgtdGovHbnznSC9QMOe7Ey9kIsTokQssV1N/wzlVx+devBNT+fEg0tbmx05s6du2DatGn1oVDo7a7ruuyz2pmZAoHAFfC39cpmYhQKdogcqCgCwMyQlqwSZ0lrUrFU0s1tCabHqLWof6QDZOy//Pz8NymlMl2zCF70XKUdR+tw8LL28sKn3zJv4eXX7vxruqHmNmvhwX1PPJmwL29x3edKhZRgti0iShp+4frWg+t8qvdYFkCs9V+Q+r7UvT1e1kcSmIuFtF60nd++4+Cuy6470vzCmmhUvXdvfWrx4sVvLygoeNKyrBp/X2AF/155ChBlZ5999hJ/+BEHpacUMIUsT0VnCT/hLfJFAYnCMBFywPt/BaotHrHXtHy5F3wmovlCCPhLyVEQkdSu6/ZbVkV7YeQvV8xf9KkljascjsXkmzr2Nf042Rnd5zrxIiEDeUKgy+hfEQCTXdXYaUGd1/YDH/hE674eox8rEBIhEmKn49x5Tsvud/y9trafAFxaX28WL17876FQ6F4pZeEgjYXIGOMGAoG8wsLCiwEgGo2OWMlMLjQ6KAwYOShaZ4ZtEBQOKMvk3okR9DyvkUD4jQ0nENHrXdfFYB2biEix1sYGLLsw/1vXLV4cvz0eDwLA1zo6eqYd3LViv+t+p1Vrk5biCW8yY9L7fQUMoorqYAD8rZcNv+Da7z2redcX7q6psaiuzsyfNat66dKlD4XD4S8bY9h4lYGDvVzEzDDGLAVA9R7xYkTyU54PV5KB13Zx5GB4Kai0Fkd3LB0VZCGAAACl1JRAIDDO136Dz9O3C22jnd5I5MYXzz//iRtmz55HRFwbjarpzbs+9Y9U/zVLDuzeBG+QMZJ6OxW81NzGtP3nhxO9ly5q3vuL1XPmBG5vbHQunLvg0vyysvpQKHS167ouANAJlBIRCa01lFJXLViwoAhZOF9SkxeCzpHEOAYkXOYxtyRlwgVSymt94TvVTSMCLNu2XTsQWNZTXPxMbMGim+rq693a2lrxlraWv2FAI8lXAzJe+or25h3vOnKongCsaGqyL6ip+TQKwn8jpWY4juMOsPdOOBQzQwhRYNv27GPDDx1z5nh0sZBOu2y0IS9lm5VyycQCx0wudCAy8b9QKHQJEdHx9t+JQESKHUenlYocKYj8z+sXL/5/K+vqiME0nP3LxhJuq6mxAOCGqqqy6OLFv5N5ef9JQiittaEh7vjEzFpKifz8/LcAQE1NzbCUTlOTV6bpWEKSEMQ4yYo0TAiB7JbJkyE9svSPiMfjetq0aeO11lO9aMIwbF4iCWM4ZYxxw+G6qxcvfvj6yVOK6+o8QsMI5nPGEI1G1arGRmfZ3EXndE2a/KTJy1uhXVczMNxOEExEEEKcBQDX+1WQw0WSpSQhKFcRVEGAUJQ9v+tE6BlBf6NMUXRFRcV5wWBwqtb6FU0NTwlPYoXtum4yL++KjsrKP5x99tmV8XhcR6PRV8VWXZmtFBYsWLBUFYUfdQPWHNdbcoe9cSEA6d1GnL9o0aKqurq6EVly3VoK430taxFkAAE5yktwl+uO+GHbtj3DV3wjvlhBpBzHcVUwGC0pKVkza9asc7LZXv40gQCI+vp6d/78+W+LRCJrSYhq7YVYRnQ/iYiMMSYQCExQSk0BgNgpNpAZDIcTJG0mZKsDM5JvCTY54FgPCiYA7bAiw/1i3K9DUErdYEw2db8eiEi5juMqpWaPGzeufv78+VcP0IRjhRSdgaitrSUApqam5rP5+fm/IaKwb+9l+9IwALZtu2akA+xoY0rYBEHZ9/BlBkIKWrRqt6XbaAiQHGk54GAgIiQcuwIAhtlxgAFYSqlzMuPkYC7KdV0tpSyPRCJ/PO+8827zNeHRuugxAAHA1NXV8dKlS3+Ul5f3tYzmyqbz13GgcDh8/Ui/nO5xik1u0hUMIkjipHjRSR9MGk7J3G4CxxJAoVTThvk9r+/LWWctZOYS3/nNDUmWSGqtjRAikJeXd/eSJUv+w+8ElTVNKQeQAMzEiRNLly1b9qdQKPQBP5+LHApfBhMBKH+lGda9nRyxF+VyIkLrLvFsym5j4t5cloax3xHhLKmWAkAMQ0v/ZMIDpaWlFwUCgTzjbbGasxeDiISfFTDhcPjzS5cu/RmAEIAz5iH7poA+++yzz6qurv5bMBh8wxDje8MCEQk/WzJ9wYIF5wFed/zhjFFRGlxy6qNODQazFALptN4jHum1jwggkQva/IBTsAAQJjHe+7liSONOnz7dAIDrupOICJRlJuUEIADCdV03FAq9d8mSJQ/PnDlzoq8NT6sQZjzdhQsXRouLi9cEAoGaAcKXa5AxRgeDwXA4HD4bAA77BUdDRTcHqnIxEWawEIT2FDaLDejttEBJyq0pRAZAP5tiAFJ6LTVOdQKKx+O6pqbGIqKo1ho8ulka5TiOGw6Hl48bN+7RefPmzQOga/zA7yiDYrGY9IXvxkgk8helVJWbhac7VBhjkE6nZwAvI/yeFJnNBnd3cChH02ApANcK7BLwmBc54fofA1GKGYow+76Kiin+7spDknDHcUosyzp32AHoEc2SlOM4Wil1dn5+fv2CBQsubWxsdPzleLTOLZgZ8XhcL1q06FORSCQOIC9Hnu6Qzh0IBK4BjnZDPSlqaz1iyPdjs+cFycxwdPZ2qfE8YMwqJS0A4LDW2/xd/XKy5BEg0mx0pbTKlqjI9GMfn+prQDKZnMrMVi4dkJOe1HNOtJSyJBKJ/GXhwoXv8be4z7mH7KcDDRFh8eLF341EIt9iZmOy7HE9VPhpTQghpsGzfYFTXeNaLy/fGiyeG8kLFWits+4dziAhWWNyyO4SAHCETWPunzSBAN5j3JlDOTpDQCguLr5KSkmci516hoiMh0xEoby8vF/W1NR8aYB2yIlgxGIxWVdXZ8aPHx9ZtmzZ/eFw+GPGGO2dfnQ1/UD4Tlhk1qxZZ/sfnfTcTf4y/cweXdqdJiiZNX2PpRCiL+V22T29mwQAjCPxoudy5TYm7TJosrTenDnxUL6jlDpbiEzr6tOHAV6iycvL+8rSpUt/Aj82hyyFMBqNqng8rmfNmlU9ffr0R4LB4Ju01g48p+d0xiGJmXUgEAiXlpZGgVMTE+LxuGEGVefTO9OOgUDWdjlLATCJ5jv/+sJmvy5YHOlnNsjhpoQAyIARIpwDIOQXWZ/oZpO/d4R0HGdi5rMczmVI8Jcocl1Xh0Kh959//vn3z5w5sxBZhGkynu6cOXMWlpaWPm5Z1uscx3Hhba91JmB8hvlkAMjPzz/Vi84fuwaBw46cQ2xy0D2DwSBMLvHY8gIAvtnXtr3VdfeESYhc7fANrzTTBCAmNFROjDKANScOcxAAzJ8/f7KUcpHWejQCsEMFEZF0XdcJBoNvLC0tfXTWrFnT/SV5WB7qAELBdUVFRY8HAoHZoxhmGRKYORMLnQEA/os/qFBlXrqS8Lw3ptKi0OSCjupn8UQ63QgAgmtrxQ96e9tDJPYHCBA5qg0hAJpZl0pp5ZMXkF6O2KBvW4YBEw6HKwKBQIHxksBnOkVm2bbtBoPBpWVlZY8tWLBgKQB3iGwayghfTU3NzZFI5H4pZanrukPm8I0WBjCkL5ozZ07pyY4tKdklAGB7Im+pClgyF2xyA7CliA8m5AMAILB2rQCANMyu4YRLhgQimWSGBfFW9nfiPNnh/f39U3J27hwgk0NWSk3Ly8v728KFC6+pr68/lRASM8MXvs+Fw+FfEJHlOzlnOuUH+POTUpYRUUnms8GOW7Wq0Wm9a06+4/KbelMagrKz/wiAMSSKA5ounYV2ABDxeq9rwXNu+g8pj+iaUzswzQaFUsz/XXn1PABUexKDPhAIXOz/d8wUjQ/IIRdFIpEHFi9e/N56n+qPVz44AY/8KWtqar6bl5d3pzFGG2POpEkxGJiZ2XGcE77wtQAxQF96MHBOrw7M9O2/rK6BwUZZUnT3O9un2y9uA0Ai0ztushXeZrxyp9zlH70WDLpYCNQEA+8AwCdrGRsMBhfm6ty5hJ9DNgBUKBT62cKFCz9XV1dnBvZb8e0lU15enr9kyZLfRSKRj7muqwGI0xlmGQqY2QghKBKJXAAM3rKjKRYjAtiGus0xxJSDjcuZYQKSUBiRL7zrN92d0WhUem8sgIM60XzY6IYIvbK3SlYnJZDLTAHGm54vn5Mv6uvd45f51atXG3hR+mHzB08jBPtR44KCgjsXL178Yz9VaGpqaqx4PK7nzZs3ccaMGY+Fw+G3+M7GWKJ7DQQLIRAKheYDQF9f38vmWAuI+OrV5te31YxrScorbc2UE8VEJLQxXKnSzwKgiooK9naii0bVG1taEhbomSAJZLst00AIkOhnNhVSzT4iuy85+vHAaRHxuHHjxhtjKk5XBmSEIADkuq4bDodvX7p06f01NTVFjV5rjHMKCwsfsyxr2XHdCcYstNb5wCtrRJpiMQIR/3UXXcMyOJm9sETWJgQzRFAyHUq79wLgeDzu1Wxk7MADjr2mw2gjKLfkVAAsiXiiCHyUAcSPbg57jBo+ZcqUs6WUlT4BM5sHx8yc442mXwbynRM3FAq90bKsP8+fP//tBQUF9UKI2a7rZuo2RgucgywRMTOYuRJA+PgakXg8zrWAOJIWn+xPGxYi+xeJAGYSyBP2nvcv4TYA/k5a8DoyAcCP3cTjLnOvyi05FQBEwjCXSXnJ49VTF8QQN+xrwQwlKBQKVQYCAYFjPWBGBCIiy7IUgGw7eZ7qPBkiw8VFRUX3SinLRzvMwszavz6ZzTvqZ30gpZyxcOHClwX+fVuWt1yy8OoUrHnsdYXKWvsZhuttdiMevP5rWzqjfoeyzMDMAP2mo6Onk83fIkIwcmgHEkAODBcKkVcNfHww3mEqlSry38qR3lkWQsB13ecTicQ9AKCUEr42HBWvmoikMca4rmuYeTQJBYaZXcuypNa6NZFI/EhrncpCCMkYoy3LKgwGg+OBY7HY+Jw5TAB3uta/uhAqh7dOatfRM4tSTwHAh/0c84AbFpUMwNH8Z8NMmbZKuQKBRC8bLhdyxf3jqs4iT+hFpgmR1jrbGKArpQQRPdnQ0HBrX1/f1bZtNymllJ9iGy1tKEbT2WBmVwghpJQqnU7/KZFIXNDQ0PAhY8yzfkotq+XYtu38AT9K1NWZ6JLzrtIyuNx1c0YRYxCJfIu7z6l47g8AsMInewzYMd3rRXJfT/+jh7U+HBJCDacD/alAALnMulioyBwr8FnA27S5rq6OAUApNTtLB0QYY6C13h+LxeTmzZsf2blz5/nJZPJrzJz2tWGmBmTMw39h2LIs5TjOof7+/lvWrVv3ps2bN++ura0VUsoj2ZatAoAxZgLgmUKxWAwxQLrKusOAOFfkFGbWUkkE2bn/gz+BgwFdKsTLjgNkXaLtkA3zd+V1TMi1FlTdRnOpku/5U0X1fOFv2gyALMs6L4tljP38renq6vp7hlnd3t7e29DQ8PlUKrXcdd2/K6Wkrw3HcoMi9ltpCCKidDr96yNHjizduHHjz2tra0VNTY1VV1dnHMd5KRekXZ8biLa2NhGPx3VzzaL3kwos1q5rkCNnyjBRWBgzrhAPGAZq/ewbMHhWglq1uQejtKQYsCkRUp2rgv/hSzfBs0l6htMH5gRIO46zDwAaGxtd+NT3Z5999p/PPPPMJYlE4rPM3KeUkmNRG2bMBN/WezGdTt+4bt26m1566aX9GT5hpm4mkUhs8Oums3pOSqkaACgvLzdXX7SwHIHQF43JYQ8sZmMpKQWc3bMDhx4DQHUD9uY7XgANA3jS6XuqTbtbC3LLjgEAEEj2GGPKpbz26cpJNxCgCTDpdPpTxhhNRNmczy0oKOgZ8DMPKDYyjY2N32hvb7/Qtu3Hx5o2ZGZXSi8xkE6nf3Dw4MFlDQ0Nv8+k/DIE2Xjc61TFzAf9r47YaTPGwHXdX8Gnw3Wm5RdUIDDJGJ0zh4oBlpIwLujc9+n4gaQfdjv64r/sJL53Kj/b3t7bA/4DAbnYpPgVMAAsAk2RgW98CMg3tbVi06ZNj6bT6Z9YlqVGKhREZAKBwGD1LRo+Q2XHjh1b1q1bd0VfX99HjTE9fvvfnHr9w4EfWmGllHJd9/ne3t6r1q1b95F9+/Z1ZrQeBn8G7SO1mZlZW5al0un06o0bN/4WAF+4aNEFViD4EdsLoudsw0oDEkFy0lUR66eDHTPYibzGiE7/zzuMa8scbNU+yElFnzG6WqqzPlI17Q6qqzNrolGVTqe/kE6nX5BSyuF6rUQErfURf+kdDOxz30RtbS1t3Ljxrr6+vqWpVOpPUkry872nUxsyM2ullDTGcDKZ/MZLL710wZYtWx7LtA05WdFQQUFBYqQnlVLKdDrd3NHR8dHa2lpx9cyZQQ4Gv0NCKuQwE2WYdchSCAr3kW/8ft3OWCwmj7+mVwigHx6RNx0+vKvP8O+KhAAj95kFIhLdRpsJUn74sfHVl15aX+8+v2VLZ29v73u11u5wPDzfeYHWeh+ONaI80XdNplXbli1bdmzYsOFNiUTiZmPMAcuyJLyY26hqQ2Y2RERKKek4TkNXV9fyhoaGz7a1tfVlyjVPMn8AgGVZI14lAMBxnNt37dp1uK6uzvQUFXw8EAgsG6THdFZgkFRkqNpK/5BO0NBoUFUbh3f1O7VzV5fWWiK7jYoHAwHkAgiTUGer4M++X1BVZmprxdatW/+Rsu3PKqUyWZGhgIkIxphDx4Y/Ofw3UTAzNTY2/rdt20tTqdQv/JhbJoCda2S0ngDQn0qlvtzS0nLxtm3bnsqUgg6hVJIBwLZt23fcjn42hJO7UkqZTCa/8uyzzz7IzHT9BQuXqHBereOlEHMXSGc2UkrKE/azP3rf5sfgX9sts8sKbpldVuAfNfgJV3j7a9DVrQfWd7D7RL4QIpcxwQwEIPpY6/FKTb2iIPA9qqszDTU11sbGxm8nEomfKqXUEAUh8wC6AcDvMDUUGCLiWCwmGxsbW9avX//enp6etzqO85KfzjO5WpYzaTSllHRd99H+/v7Xbdiw4Y69e/em4DflxDBe8s7OzoQxpo2IXrGDwAnO71qWpZLJ5EONjY1fQTSqiAi9FPgBk8hjr5lFziIfBsRByagIOt+hFdC1/rYbP9vR3vuzHe29mWmdROJjggE65PKdSWN0xlLPNYTnFbuzrMA7N0+Y9unFjY3O6jlzAg0NDR9PpVJP+k7JkLQRM49oX5KMNvQD2Pfv27fv/EQi8SMAItuQDTObAbZeZ39//0eeeeaZKzdt2vTcgAL4Yb/cqVTKMcb0nvpIT/iVUsq27SYiurm2tlZTfb177fLzf8AqtMTNtfYDGyGkyJPOjntu2XgvANR5ZsUrcMKT+vR5uqh179pWYx7PFyKzWUzOwYDsMcZUKvG1P5dXXrWiqclm1Ca7u7vfkU6nd/ia8KTn9lvQJoBjuzsOE8YvSJctLS1HGhoaPpRIJK61bXurbxsOO53HzNpf0qVt23/q7Ow8/9lnn/0BPKGTw9V6A3HgwAEHQO+plmA/qC1d1z2YSCSub9iwob2urs7c+Lp5N9uwPmgfo47lDNqA8yzQ+JB9B62APllF4Uml3u/rx7ts998TxmgxSsHpjD2YJ4RaGsz771+Pq55FqDMv7NjR3NfXd53W+oDvGZ9KCFPZzsUXCorFYnLTpk0Pt7e3X5hKpb4OwLYsa6jpPAPA+AHltr6+vvevW7fuTdu3b3/B93AZ2b/MLjP3nSwRkhE+Y8zhI0e6r9+8efNuBvDOa2rmtcuC7/XZxohcEyh8bR9CessNEw/d73u+J3xxT3ryFYBeHYvJq9r2/eOw1g8UCjmkzaFHAgGIfmNMiZAVl4ZCD/6pYtp4BtO2rVtfsm37cmY+eCIhzHTRIvL2sx1u16dBwBltuHPnzp7169d/LplMLrdt+x+nCmBntJ4QQqRSqV+n0+klmzZt+qkfUBb1J1iKhjW5Y4yhE4ZiBghfe3t7+5tffLFpEwDc9b5FM9McfDhtZKHg7DMpx0MzEFaM6ohb+8ZVLZn5nfCFPaX0x+JxJoB3pJJf7NBu2hoFjzgDSSS62OhxUp612BIPrp44qeTLtbWisaFhR29v79XGmL2+TTa4PSGEk8v5DNSGGzdufOaf//znJclk8ovGmD7LsjLzyGQmjmo9Y8zOZDK5Yv369Tdt3Lhx74CAci4cOV65ciUBgBAimfnsZQf4Wkhr3drb23v9jh07/gEAqz82Z/I/D4X+eqhPVhvXzQnL+fjzWpYlCpS99scPPvvHWCwm7zuFV3/KCRBgDGLy+o5D2w5p8718IUeT2gQJyG5jdIWSi5dx4P5Jd90V4dpasWXz5ue7u7svs217+0kck1EJnWS0IQDd0NDwHz09PRel0+k1GaoXAFspJYhIpFKpH/b29i5tbGyM+5pqKKGVkWKwrI9jWZZ0XfdAV1fXNVu2bPknADz8ibMrH3ix8K+7u9UMo10tRG4TDASPc5UnXSoL9H2SCByPx0+pqYb4BsQNA/R0Qt95SDsHQqMUlhkwKdlljK5UKnpVqOihr33vewUMYNvWrS+1JZPRdDr9xICU3cBrHDVyQUYbRqNRtXXr1ufWrVt3eTKZ/KQxpseyrIBt28/39/dfu379+g9v2bKlMxaLSd80yPmcMk4WEdkDbMBMjNGybXtjd3f367Zt27YRAL5z84Kpv9xW9NTuHusco71gc64nZZh10FKizLK//9O/NG3KvLCn+t6QBNDPB4sPde/rPKT1Zy1Pd49qtkB4nrE7XqmLb8orffR/xo2rNAD2bN58eN26dW9IJBL3ZKjpGXssSyLDUHA0ncfM3NDQ8F9dXV0XJhKJz+/cufPCTZs2PTyUNFou5+P/m8kny2Qy+eeurq4rtm1r2gcAH3jjvNlPtuQ9sb/fmqFNbjMdA2CYJBUou+Ws4MF/Z4Ay23udCkO2AchjysjFLXt/s1c7fywUQplR3viPANVjjFuh5JLrQsWPrimfONMA4GjUbmhouDWZTH6MmVNCiNBpzuMeDWBv27Zt64YNG77W3t7eO9Q0WrYY4GS5vtMTBCASicT/27Bhwxu3b9/ezgy88ZL5i3b3Fz5+OKmmGa21GKViKcMwhUGIsmD6o3UPthyJxWKirm5oCmpY2z3Brx3Z6/R/ul2b7rCnckb1ZntCqN0CKeeeHQw+9WBF1eVUX+/WIqo2bNjw/SPd3Ve4rvtcJlY3mnM5HpkA9mnWegPBvr23K5FI3NDY2PiVWCwmf37zlNA7o/P+pdtEnupLi2qT4xzvyybArJWSqtCyV//ivRv/6LeiG/JKNCwviPxeeVccPrzrBTf9cQkSApyDDbRPdV5SXUbrQiEnXBAIP7i1curH6+C1x9i5devfd+7ceXFvb+89AIaUGcgxzOnQeieATiaT97e1tV2wcePGB7579czg6njcpFA8oc/K/3lSywi0O4qtf9mQkLJY2YdniY6P0ArotR7ZdMj3YkQagxGThLjeWT3td9NUYEWndk9LyzEDGAkSBYKw23V++ePuts98u6/vCB/jLVoAchqKGaMgADx58uTKffv2HRI41tLM78ql37x88ee7OfzVhO2O1tLL2kDnh4jOKXduuCu+/qHB6FanwojiQCsRZwboOz1HPnTAsXfmnQZ7EPCC1QbMPcboacq6+d+Kxz/9xLiJ0Qxpll81m1FnDQaA/fv2tcAXvqcrplywtXryD5Y3NYUYwHcXHfpOYcBuIKEkRsE+NoZ1fshSpSL5w7vi6x+KYfjCB4xQAOsAEwfED3p725u1fWuaWQcIo24PAsg0T5LdRrvFUs5eGAo9urd62je+VlJS5DtKJ+3A9VpALSDY+4tPjx8f2VE95Qtzgupvc6y8D91oRb5IAE/+zoFkqd393kLLdZiEF6bLFZiNZVmqOJR+5ouL3M9Ho1G1GkO3+wYiy27nUUWodxsmTPnQ3EDwB0k2Lg+zi2g28JZkiCIh0aadpsNaf2l+y94/eHODBMB0hqj2o4FaQKz0zA0NAM9MmHLNJCXvmCDVeT3GgABHALoxZV/++rZ9fweAm65b+m/7+4JfT6ddV4gcmEnMxkCgMKBbp4a6alY9sr0Fx3ppDxtZe41rAHUp4D5XOfmncwPhWzqNdsVpFEIGmMEmn6S0weg15v7tqcRXLz/S8mxmfsu9vVBetYLotzE5KngPj5809xxlfaFYyncGQehn45FrAS4kIVq1u/ULbv+yGR9oTc6tA/3usiVPtznh8/2mSdnYg6wNTHk+ydnh3rd+68+b7890gh3pgFkvVcsBzagV97fs+2CL6zxZJqQyo0DhPxEIIAGS/WyMw8zjpXzL4nDkqX3VM374+PhJcy8FXH9pFqtP81ZcWYJWA9Jz+GAI0H8tnzhzV9X0by8JBJ6ZpKx3ambuY2MIkN59gOgxWlcqNffzIlxXVwcTA8yscbjZIqeHkd1SbBi6MKLkhIj9sVwIH5CjuFktIOoA89fCiaWLCkNPlkgxt9ujb532B24ArUCyUAh0abe3B/zb5x37e29oPfB85hj2vDWsGINOi6ftooJw7ME+WVV1VhUFP1IoxDvLhCzrNQwHRotBCsYYgASMAcQ6J7X82kMH6gHglqvP+8x+u+CbPQnblSNYig2zGwoqFUHyjofWNnx5JB7vYMhZ4HY1IFcA+r8Kxs16e1HRE0VSTuw7Q0LIXl7UBISQESK0ac02+L79tvPrnsPBv16LnWn/uIE0dDMaJahDmCvh2Ep01Ga9DbBWVExaPtuybraIVpRJaSWZkWajCSRO1jDSMJt8IcUR7e54rE+f/y9XLu0V98X1tZcseaTbhK7UwwxMG2Y3YFmqlPp/86f6xnddEo2qtfX1Ohf3K6eZg4wQxsdXL7tYhR4ukKIkwWzEGfJK/R6HRgCySEj0G40e5hfTxvzyRe08enXrgfUvPz6qgHoGwCsBrPQEIpdCSbUArYRH9o0hSgM1HQD8trx6wXnKuiog6N1FQp5bJCS6jYb2qHZiqKRgA+gSIWSTk/7u/Oa9n1iNmHwxtnX239uLn2lPUkSSERhCGz7D7CqlVHUg+eTKKbuv/+2kj/QDdRhqqu1UyHnqKiOEj5RPunJB0Lq/QMjImRTCDJjZJSIVJEJECBxynDSIth/U7upyJZ6K7d/93Hqg5xXfQ0yiZpdAYz7HUc9bPeE8YfFsRlpXAjTXFzLU9BEapxu/F87xyNtdNWNBG7vLqoV6pyTMGS9VJMkGSWa/JJbUcB8UAywBo0C02U1e+7qWA48AQOzyBbd26cJVvalTB6iZ2ZXKUpPy0ps+MbP78mU/2N6eMbeGOZ0TYlRypxnP+PEJ1deea4XiEZJ5KTaaxoATYAAGs7ZIqCARLALSzDis3a15JHbtdpynDmn3sbmB8JFZzS8dQm4zK2LHxImV+2yUhkhEZyp1WRo8tUjIhYVCwmaGDYZrjMNEkrJ8aQ1gIkSi3Zgd9yQ6ly6fNy+xfHmbuPEfBQ8cSgWuOlmO2Pik1qn5zqZrq/qufudPn2+tra0VPrE2Zxi15D0DigD3b+UTr1oQDK4uEKKwn/mM2ISDwV+eGWAmECIkpEVAihkuM9LMTgfrDcRoKpOqs9fozm1u+vk92j7Q7rodiVAoEbDtdB4RTwuH3a3ptITWotcOBsJWKjxeqdKJHKhaGLDmFkur/Ih2i13wrFKSF+RJERIAQkTQDPSxMcabB8FbF3NYHgk9Tkq5PZ1adU7L3tsB4INXzpi0zylv6rBlhAbphMCGXWkpNTmSfvaayT3Xv3vV9pbVsZhcMQpki1Flj2Q04d/GTYyeGwquLpOyosfoQb23Mw0DGIK3X54f0qA8Egj44uAyo9MYaDZpgBwBuN6GAkf5kmCAmCEYkAwOEChYIiQCwjvCBaPPmEwPYgOwYRCN9sogvAZQcpvjXHtB696HJQPvvq7m5j19eb9IHRegZoa2lJITAsmnbprR/ZY3rnrhSCwGGY+PTsRg1OlL7MWo9D3jqhZdGwrdN16q6R1GuwJndsuqU8FXj4b8RpH+nqpKgIakopgBA4YBNGf2WPPoyyf1YEcDnFmKtdnzrd62mm/39HQSwLErljx02A5fa9teQyLDMKGAkoXU/6v/l998++IHWxKjsewOxGm5ERkhvLekatLl+eF4mZDLOo1x/c9P68PIBjwCj3isXJ/nFUv5kmv/fPbB3besiUbVP2amyp58STZ2p2k8AC4MSyvIia8+uKbhS4xj8d3RnNdpuzkZ7/izJSVFt+UV/3KSsm7oO7Yr4WuaPDBGwAQYi0g2plI3LD+8/wEAuP0NC/5lT6L458I4qC50PnbPnzZ8PxaLydXx+GmJi57upUBkAq0bK6esnGUFagEgOYack9cyDGDyiKhb6+Zf9KQWfKHnYAcR8fWXLb2jOmA3/fjhTb+pjUZV3TBJpdngtC8PfuQfBPDG6smxCbBWlSlZ3G20JpAcE+vVaxjMrAuElHtc9zdOcei9TU1z9Yqju5jWCmD07L3BcEaety+EkgD3gcrKs8+T4R9WS+vSLqON9paK/9OGo4BMZqhICNmq3d41ifScd3ccPFgbjcqmigo+AzUtZ9ZAzjgnAERT5bS6CiU+Vyik6jHGxavMQRnrMGCtSMhCIuzV7ppndfJDW1paXgA8gvGZmtcZf8AMCJ+9gTXjpyyfqeT3KpWa12cMHPCYjBm+mmB856NYCNmjTe8RmDvOOrDrW/Big2d8m4Az7n2SL3wMyEtb96791MHeC3c59p0OI1UipGSPy/eqJZOeKTDABqzDRFQohGxx3Ueec1IXnnVg1zcI0D6t/4zjjGvAgfDZHoYBPD1h0uJpKrCySIjrJAj9rLXXBfDMvzRjGezHwBVIFgmBw9o5sF+7K5e07PspcDQ7NWb2SBlTAggc48dl6Oebqqa+rVLIL5RKOd9mRpKNC89bHnNzP5PIlCZIkCgUgjqMTra7+kf396a+9sW+Q23+faWxVpowZh+iTxZlAvjrZWUFNwQLbx0nxIdLpJqeZIM0s+vHFf9Xa0S/N5wriFShxx00vcb89tlk4o63dBza5h3jFY+d2ZkOjjErgBlkMigAUJufPy5WUPb+Uqk+XiHlBJsZCWbjM1r+Vzkrvl3M0ifbdhlt9xnzh252vzeved8/AGANomo5csNcHi2MeQEEXrksf66oqOR9kdJbIkLcWiLkbEVAjzHsP5TXrJ3IvkdrwD59jHDEddNp8G/2OOYnyw/vfcY/7lVTkvqqEMAMjhfEu8rL8y8MRN5STvI9eUSXFQoBmxkpZteA6VS1E68GZHiLfo2LCoIgCWh39Ut9MH/YYPf9+B1tbS/5x4o4QGOx2OpEeLU+HGJE5UC7ZtuE6YtJmJtLhLyuSMppFoB+ZjjePgmaiF419qJHBWMtQCxBKkBAWAi0uW5fymB9u9Z3P96ffuIzfS1H/OMFcLR51KsKr1YBBPCyirKjzI0YUPSNidOvsQ1fWyrFdRZEaZEQSHg1FhkWtGFPO4qxcAM804EzaXIhASoUAhpArzHJXjYvpph/sdW2n3hr28Hnjn0vqlai3pzJTEa2GAv3Pxeg1YCIAaABy89tJSVFtwWL3lSpxLK04cvLlZqVocK7DPSzMYbZ+ETRgfcip7R44Bj/f4BDkKEXcpCEChNBA3CY0WuMnWD+qySz4dFEz+9v7ejY7g+B1YCMwavYezULXgavFQE8Ck+NRCWO8/7uLikpmmHlTSkS8o1TlXVBr+FJJVLMKxYSLhiaAfYYzHA9+rzmY1vWk0+dB46xeei48wKeGstQ9JnB3v8ZICIZ9LcjIt+Ok/7/97lOW4DwfIp5T5N2Vs8Wwa2zml/a//LxYxKIvyoci+HgNSeAx4EYEIjFQK9kekSaqqbM1waVPWzmT7Gsy8IkxiWNKSBQWZmUoQARjCc/MAxoMDQyuUF+mSQIAMIXLAU6GqD0VCuh02j0s2m3GJ0WiXSz0c92a2ftZBE68ESi94X3drfuwXHj6dfAEnsqvNYF8CgymYC1gFgejYIG72lCbw+HK2+MFM08P5A3RwoUdrIpTBuUAjwuSJgchCi3SOQHCBFFFPET+mwb7nFh0glGi23MIRc4Iola8wW1lwqZPKDd5vt6ep+r62vfh0E2mGHUCmCtAOoHFjqN2fhdrvD/ARIgUjIQGaGUAAAAAElFTkSuQmCC" alt="Amco"><span class="bwm">amco<i>investors</i></span></span><span class="pill">Admin</span></div>
+  <div class="navlinks"><a data-go="overview">Dashboard</a><a data-go="deals">Deals<span id="qa-dot" style="display:none;margin-left:5px;width:8px;height:8px;border-radius:99px;background:var(--clay);vertical-align:middle"></span></a><a data-go="new">New investment</a><a data-go="investors">Investors</a><a id="admin-lock">Lock</a></div>
+</div>
+
+<!-- HOME -->
+<div class="page show" id="page-home">
+  <div class="wrap">
+    <div class="eyebrow" style="color:var(--clay)">Admin home</div>
+    <h1 class="disp" style="margin-top:6px">Good morning, team.</h1>
+    <div class="qstrip" id="home-stats"></div>
+    <div class="hgrid">
+      <div class="hcard" data-go="overview"><div class="hicon" style="background:var(--sageBg)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3F7A5C" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div><h3>Overall dashboard</h3><p>The whole business at a glance — capital raised, live deals, investors, income distributed.</p></div>
+      <div class="hcard" data-go="deals"><div class="hicon" style="background:var(--clayBg)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B5532E" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="11" width="18" height="4" rx="1"/><rect x="3" y="18" width="12" height="3" rx="1"/></svg></div><h3>All deals</h3><p>Every investment and its status. Open any deal for its own management dashboard.</p></div>
+      <div class="hcard" data-go="new"><div class="hicon" style="background:var(--sageBg)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2C5D6B" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div><h3>New investment</h3><p>Enter a deal's figures and the system calculates everything investors will see.</p></div>
+      <div class="hcard" data-go="investors"><div class="hicon" style="background:var(--clayBg)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B5532E" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><circle cx="17" cy="9" r="2.2"/></svg></div><h3>Investors</h3><p>Who's invested in what, KYC status, and incoming redemption requests.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- OVERALL DASHBOARD -->
+<div class="page" id="page-overview">
+  <div class="wrap">
+    <div class="eyebrow" style="color:var(--clay)">Overall dashboard</div>
+    <h1 class="disp" style="margin:6px 0 16px">The business at a glance</h1>
+    <div class="mgrid" id="ov-metrics"></div>
+    <div id="ov-drill" style="margin:4px 0 16px"></div>
+    <div class="grid2">
+      <div class="card"><h2>Raising now</h2><div id="ov-raising"></div></div>
+      <div class="card"><h2>Needs attention</h2><div id="ov-attention" style="font-size:13px"></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><h2>All deals</h2><div id="ov-deals"></div></div>
+  </div>
+</div>
+
+<!-- METRIC DRILL-DOWN -->
+<div class="page" id="page-metric">
+  <div class="wrap">
+    <div class="crumbs"><a data-go="overview">Dashboard</a> / <span id="mt-crumb"></span></div>
+    <h1 class="disp" id="mt-title" style="margin:4px 0 4px"></h1>
+    <div id="mt-value"></div>
+    <p id="mt-note" style="font-size:13px;color:var(--muted);margin:6px 0 0;max-width:560px"></p>
+    <div class="mgrid" id="mt-subs" style="margin:18px 0"></div>
+    <div class="card"><h2>By deal</h2><div id="mt-table"></div></div>
+  </div>
+</div>
+
+<!-- ALL DEALS -->
+<div class="page" id="page-deals">
+  <div class="wrap">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div><div class="eyebrow" style="color:var(--clay)">Deals</div><h1 class="disp" style="margin-top:6px">All investments</h1></div>
+      <a class="btn" data-go="new">+ New investment</a>
+    </div>
+    <div class="card" id="deals-list"></div>
+  </div>
+</div>
+
+<!-- PER-DEAL DASHBOARD -->
+<div class="page" id="page-deal">
+  <div class="wrap">
+    <div class="crumbs"><a data-go="deals">Deals</a> / <span id="pd-crumb"></span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:12px"><div class="dswatch" id="pd-sw" style="width:48px;height:48px;flex:0 0 48px"></div>
+        <div><h1 class="disp" id="pd-title" style="font-size:24px"></h1><div style="font-size:12.5px;color:var(--muted)" id="pd-sub"></div></div></div>
+      <div style="display:flex;gap:8px;align-items:center"><span id="pd-status"></span><span id="pd-risk"></span><a class="btn btn-ghost" data-go="new">Edit deal</a></div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px"><h2>Stage</h2><div class="stage" id="pd-stage"></div></div>
+
+    <div class="grid2" style="margin-bottom:16px">
+      <div class="card"><h2 id="pd-fundtitle">Funding</h2><div id="pd-fund"></div></div>
+      <div class="card"><h2>This month</h2><div id="pd-month"></div></div>
+    </div>
+
+    <div class="grid2" style="margin-bottom:16px">
+      <div class="card"><h2>Key figures</h2><div id="pd-figs"></div></div>
+      <div class="card"><h2>Investors <span id="pd-icount" style="color:var(--muted);font-weight:400;font-size:13px"></span></h2><div id="pd-investors"></div></div>
+    </div>
+
+    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-ink" id="pd-advance">Advance stage</a><a class="btn btn-ghost" id="pd-distribute">Distribute income</a><a class="btn btn-ghost" id="pd-close">Close raise</a></div><div id="pd-action" style="display:none;color:var(--sage);font-weight:600;font-size:12.5px;margin-top:10px"></div></div>
+  </div>
+</div>
+
+<!-- PUBLISHED DEAL DETAIL -->
+<div class="page" id="page-pubdeal">
+  <div class="wrap">
+    <div class="crumbs"><a data-go="deals">Deals</a> / <span id="pd2-crumb"></span></div>
+    <div id="pd2-content"></div>
+  </div>
+</div>
+
+<!-- NEW INVESTMENT (builder) -->
+<div class="page" id="page-new">
+  <div class="wrap">
+    <div class="eyebrow" style="color:var(--clay)">New investment</div>
+    <h1 class="disp" style="margin:6px 0 2px">Build a deal</h1>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 16px">Enter the figures. Everything investors see calculates live on the right.</p>
+    <div id="edit-banner" style="display:none;background:var(--clayBg);border:1px solid var(--clay);color:var(--ink);border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;margin:0 0 16px"></div>
+    <div class="cols">
+      <div class="card">
+        <div class="sec">Property</div>
+        <div class="frow">
+          <label class="afield"><span>Deal name</span><div class="ig"><input id="f-name" value="" placeholder="e.g. Derby House, Wigan"></div></label>
+          <label class="afield"><span>Short description</span><div class="ig"><input id="f-desc" value="" placeholder="e.g. 2-bed end-of-terrace"></div></label>
+        </div>
+        <div class="frow" style="margin-top:9px">
+          <label class="afield"><span>Type</span><div class="ig"><select id="f-type" style="width:100%"><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="industrial">Industrial</option><option value="mixed">Mixed use</option></select></div></label>
+          <div><span class="afield"><span style="font-size:11px;color:var(--muted);font-weight:600">Risk rating</span></span><div class="riskbtns" id="f-risk"><button class="rb sel" data-r="low">Low</button><button class="rb" data-r="medium">Medium</button><button class="rb" data-r="high">High</button></div></div>
+        </div>
+        <div class="frow" style="margin-top:9px">
+          <label class="afield"><span>Property category</span><div class="ig"><select id="f-cat" style="width:100%"></select></div></label>
+          <div></div>
+        </div>
+        <div id="cat-detail"></div>
+        <div class="sec">Costs in</div>
+        <div class="frow">
+          <label class="afield"><span>Purchase price</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-price" value="" placeholder="0"></div></label>
+          <label class="afield"><span>SDLT (auto)</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-sdlt" value="" placeholder="auto" readonly style="background:#F1F0EE;color:var(--muted)"></div></label>
+          <label class="afield"><span>Legals</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-legals" value="" placeholder="0"></div></label>
+          <label class="afield"><span>Works</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-works" value="" placeholder="0"></div></label>
+        </div>
+        <div class="sec">Refinance</div>
+        <div class="frow">
+          <label class="afield"><span>Value after works</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-value" value="" placeholder="0"></div></label>
+          <label class="afield"><span>Loan-to-value</span><div class="ig"><input class="tnum num" id="f-ltv" value="70"><span class="pre">%</span></div></label>
+          <label class="afield"><span>Mortgage interest</span><div class="ig"><input class="tnum num" id="f-rate" value="5.5"><span class="pre">%/yr</span></div></label>
+          <label class="afield"><span>Loan fees &amp; legals</span><div class="ig"><input class="tnum num" id="f-loanfee" value="2"><span class="pre">% loan</span></div></label>
+        </div>
+        <div class="sec">Income</div>
+        <div class="frow">
+          <label class="afield"><span>Current rent</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-cur" value="" placeholder="0"><select id="f-cur-u"><option value="12">/mo</option><option value="1">/yr</option></select></div></label>
+          <label class="afield"><span>Rent after works</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-aft" value="" placeholder="0"><select id="f-aft-u"><option value="12">/mo</option><option value="1">/yr</option></select></div></label>
+        </div>
+        <div class="sec">Running costs</div>
+        <div class="frow">
+          <label class="afield"><span>Management fee</span><div class="ig"><input class="tnum num" id="f-mgmt" value="10"><span class="pre">%</span></div></label>
+          <label class="afield"><span>VAT on mgmt</span><div class="ig"><select id="f-vat" style="width:100%"><option value="1">Yes (+20%)</option><option value="0">No</option></select></div></label>
+          <label class="afield"><span>Insurance</span><div class="ig"><span class="pre">£</span><input class="tnum num" id="f-ins" value="" placeholder="0"><span class="pre">/yr</span></div></label>
+          <label class="afield"><span>Platform fee</span><div class="ig"><input class="tnum num" id="f-plat" value="0"><span class="pre">%/yr</span></div></label>
+        </div>
+        <div class="sec">Shares &amp; timing</div>
+        <div class="frow">
+          <label class="afield"><span>Number of shares</span><div class="ig"><input class="tnum num" id="f-shares" value="" placeholder="0"></div></label>
+          <label class="afield"><span>Min shares per investor</span><div class="ig"><input class="tnum num" id="f-minshares" value="" placeholder="1"></div></label>
+          <label class="afield"><span>Amco co-invests</span><div class="ig"><input class="tnum num" id="f-coinv" value="25"><span class="pre">%</span></div></label>
+          <label class="afield"><span>Refinance by</span><div class="ig"><input class="tnum num" id="f-loanmo" value="10"><span class="pre">mo</span></div></label>
+          <label class="afield"><span>Closes on</span><div class="ig"><input type="date" id="f-close" style="border:none;outline:none;font-size:13px;width:100%"></div></label>
+        </div>
+      </div>
+      <div class="out">
+        <div class="card">
+          <div class="eyebrow" style="margin-bottom:10px">Calculated — what investors see</div>
+          <div class="ogrid">
+            <div class="ocell"><div class="k">Share price</div><div class="v" id="o-share"></div><div class="s" id="o-shares"></div></div>
+            <div class="ocell"><div class="k">Total raised</div><div class="v" id="o-total"></div><div class="s">money in</div></div>
+            <div class="ocell"><div class="k">Capital back</div><div class="v" id="o-capback"></div><div class="s" id="o-released"></div></div>
+            <div class="ocell"><div class="k">Money left in</div><div class="v" id="o-leftin"></div><div class="s">stays working</div></div>
+            <div class="ocell"><div class="k">Day-one yield</div><div class="v" style="color:var(--clay)" id="o-dayy"></div><div class="s" id="o-daynet"></div></div>
+            <div class="ocell"><div class="k">After-refi yield</div><div class="v" style="color:var(--sage)" id="o-refiy"></div><div class="s" id="o-refinet"></div></div>
+            <div class="ocell"><div class="k">Value created</div><div class="v" id="o-uplift"></div><div class="s">uplift</div></div>
+            <div class="ocell"><div class="k">Per share back</div><div class="v" id="o-psback"></div><div class="s" id="o-psleft"></div></div>
+          </div>
+          <button class="btn" style="width:100%;margin-top:14px" id="publish">Publish investment</button>
+          <div id="pub-done" style="display:none;color:var(--sage);font-weight:600;font-size:12.5px;margin-top:10px;text-align:center">✓ Published (demo) — would now appear in the live list.</div>
+          <div class="warn" id="warn"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- INVESTORS STUB -->
+<div class="page" id="page-investors"><div class="wrap"><div class="card" style="text-align:center;padding:40px"><div class="eyebrow" style="color:var(--clay)">Investors</div><h1 class="disp" style="font-size:22px;margin:10px 0 6px">Investor management</h1><p style="color:var(--muted);font-size:13px;max-width:440px;margin:0 auto">Every investor, their holdings across deals, KYC status, and incoming redemption requests. We can build this next.</p><a class="btn" style="margin-top:16px" data-go="overview">Back to dashboard</a></div></div></div>
+
+<script>
+(function(){
+  var root=document.getElementById('amco-admin');
+  var $=function(s){return root.querySelector(s);};
+
+  /* ---- admin passcode gate (demo) ----
+     NOTE: change ADMIN_CODE below to your own passcode. This is a client-side
+     gate for the demo only — it keeps casual viewers out, but it is NOT real
+     security (a technical person can read it in the page source). Real admin
+     auth belongs in the production build. */
+  var ADMIN_CODE='amco2026';
+  var AStore={ get:function(k){try{return window.localStorage.getItem(k);}catch(e){return null;}}, set:function(k,v){try{window.localStorage.setItem(k,v);}catch(e){}}, del:function(k){try{window.localStorage.removeItem(k);}catch(e){}} };
+  function unlockAdmin(){ $('#admin-gate').style.display='none'; }
+  function lockAdmin(){ AStore.del('amco_admin'); var gp=$('#gate-pass'); if(gp) gp.value=''; $('#admin-gate').style.display='flex'; }
+  if(AStore.get('amco_admin')==='1') unlockAdmin();
+  $('#gate-go').onclick=function(){ var v=($('#gate-pass').value||'').trim();
+    if(v===ADMIN_CODE){ AStore.set('amco_admin','1'); $('#gate-err').style.display='none'; unlockAdmin(); if(typeof refreshQADot==='function') refreshQADot(); }
+    else { $('#gate-err').style.display='block'; } };
+  $('#gate-pass').addEventListener('keydown',function(e){ if(e.key==='Enter') $('#gate-go').click(); });
+  $('#admin-lock').onclick=lockAdmin;
+
+  /* ===================== SHARED DATA (Supabase) =====================
+     To make deals you publish here appear for investors on ALL devices,
+     paste your Supabase project URL and anon key below — the SAME values
+     in BOTH amco-admin.html and amco-app.html. Until you do, published
+     deals are shared only within your own browser (fine for solo testing).
+     The one-time table setup SQL is in DEPLOY.md. The anon key is meant to
+     be used in the browser, so it is safe to paste here. */
+  var SUPABASE_URL = 'https://ubrhscfdlzmwkdmfnbkl.supabase.co';      // e.g. 'https://abcd1234.supabase.co'
+  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVicmhzY2ZkbHptd2tkbWZuYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTkyMjcsImV4cCI6MjA5NzczNTIyN30.pTSk3qNMZW5IQOwVWlpogqLur8M2m5_XxR8QGxM-nDo'; // your project's anon public key
+  var DB = (function(){
+    var TABLE='deals';
+    var on = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+    function hdr(){ return { apikey:SUPABASE_ANON_KEY, Authorization:'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }; }
+    function localList(){ try{return JSON.parse(window.localStorage.getItem('amco_deals')||'[]');}catch(e){return [];} }
+    function localAdd(d){ try{var a=localList(); a.push(d); window.localStorage.setItem('amco_deals', JSON.stringify(a));}catch(e){} }
+    function list(){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/'+TABLE+'?select=data&order=created_at.asc',{headers:hdr()})
+        .then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(rows){ return rows.map(function(x){return x.data;}); })
+        .catch(function(){ return localList(); }); } return Promise.resolve(localList()); }
+    function add(deal){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/'+TABLE,{method:'POST',headers:hdr(),body:JSON.stringify({deal_id:deal.id,data:deal})})
+        .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return true; }).catch(function(){ localAdd(deal); return false; }); } localAdd(deal); return Promise.resolve(true); }
+    function localPatch(deal){ try{var a=localList(); for(var i=0;i<a.length;i++){if(a[i].id===deal.id)a[i]=deal;} window.localStorage.setItem('amco_deals',JSON.stringify(a));}catch(e){} }
+    function localRemove(id){ try{var a=localList().filter(function(d){return d.id!==id;}); window.localStorage.setItem('amco_deals',JSON.stringify(a));}catch(e){} }
+    function patch(deal){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/'+TABLE+'?deal_id=eq.'+encodeURIComponent(deal.id),{method:'PATCH',headers:Object.assign({Prefer:'return=minimal'},hdr()),body:JSON.stringify({data:deal})}).then(function(r){return r.ok;}).catch(function(){localPatch(deal);return false;}); } localPatch(deal); return Promise.resolve(true); }
+    function remove(id){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/'+TABLE+'?deal_id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:hdr()}).then(function(r){return r.ok;}).catch(function(){localRemove(id);return false;}); } localRemove(id); return Promise.resolve(true); }
+    function localCommitments(dealId){ try{return JSON.parse(window.localStorage.getItem('amco_commitments')||'[]').filter(function(c){return c.deal_id===dealId;});}catch(e){return [];} }
+    function commitments(dealId){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/commitments?deal_id=eq.'+encodeURIComponent(dealId)+'&select=*&order=created_at.desc',{headers:hdr()}).then(function(r){ if(!r.ok) throw 0; return r.json(); }).catch(function(){ return localCommitments(dealId); }); } return Promise.resolve(localCommitments(dealId)); }
+    function allCommitments(){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/commitments?select=deal_id,shares,name,email',{headers:hdr()}).then(function(r){ if(!r.ok) throw 0; return r.json(); }).catch(function(){ try{return JSON.parse(window.localStorage.getItem('amco_commitments')||'[]');}catch(e){return [];} }); } try{ return Promise.resolve(JSON.parse(window.localStorage.getItem('amco_commitments')||'[]')); }catch(e){ return Promise.resolve([]); } }
+    function localQ(){ try{return JSON.parse(window.localStorage.getItem('amco_questions')||'[]');}catch(e){return [];} }
+    function localAnswer(id,ans){ try{var a=localQ(); for(var i=0;i<a.length;i++){if(String(a[i].id)===String(id))a[i].answer=ans;} window.localStorage.setItem('amco_questions',JSON.stringify(a));}catch(e){} return true; }
+    function questions(dealId){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/questions?deal_id=eq.'+encodeURIComponent(dealId)+'&select=*&order=created_at.asc',{headers:hdr()}).then(function(r){ if(!r.ok) throw 0; return r.json(); }).catch(function(){ return localQ().filter(function(q){return q.deal_id===dealId;}); }); } return Promise.resolve(localQ().filter(function(q){return q.deal_id===dealId;})); }
+    function allQuestions(){ if(on){ return fetch(SUPABASE_URL+'/rest/v1/questions?select=*&order=created_at.desc',{headers:hdr()}).then(function(r){ if(!r.ok) throw 0; return r.json(); }).catch(function(){ return localQ(); }); } return Promise.resolve(localQ()); }
+    function answer(id,ans){ if(on && String(id).indexOf('lq_')!==0){ return fetch(SUPABASE_URL+'/rest/v1/questions?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:Object.assign({Prefer:'return=minimal'},hdr()),body:JSON.stringify({answer:ans})}).then(function(r){ return r.ok; }).catch(function(){ return localAnswer(id,ans); }); } return Promise.resolve(localAnswer(id,ans)); }
+    return { list:list, add:add, patch:patch, remove:remove, commitments:commitments, allCommitments:allCommitments, questions:questions, allQuestions:allQuestions, answer:answer, on:on };
+  })();
+  var gbp=function(v){return (v<0?'−£':'£')+Math.abs(Math.round(v)).toLocaleString('en-GB');};
+  var gbpk=function(v){return '£'+(v/1000).toFixed(0)+'k';};
+  var gbpm=function(v){return v>=1e6?'£'+(v/1e6).toFixed(2)+'M':gbpk(v);};
+
+  var STAGES=['Sourced','Funding','Bought','Works','Refinanced','Holding'];
+  var DEALS=[];
+  var byId={}; DEALS.forEach(function(d){byId[d.id]=d;});
+  var raisedOf=function(d){ return d.status==='funding' ? (d.sold/d.shares)*d.totalIn : d.totalIn; };
+
+  /* router */
+  function go(name){
+    if(name==='overview') renderOverview();
+    if(name==='deals') renderDeals();
+    root.querySelectorAll('.page').forEach(function(p){p.classList.remove('show');});
+    var el=$('#page-'+name); if(el) el.classList.add('show');
+    root.querySelectorAll('.navlinks a[data-go]').forEach(function(a){a.classList.toggle('active', a.dataset.go===name);});
+    $('.top').scrollIntoView({block:'start'});
+  }
+  root.addEventListener('click',function(e){ var g=e.target.closest('[data-go]'); if(g){ e.preventDefault(); if(g.dataset.go==='new'){ clearForm(); } go(g.dataset.go); } });
+
+  /* home stats */
+  (function(){
+    var raised=DEALS.reduce(function(a,d){return a+raisedOf(d);},0);
+    var inv=DEALS.reduce(function(a,d){return a+d.investors;},0);
+    var live=DEALS.filter(function(d){return d.status==='live';}).length;
+    var funding=DEALS.filter(function(d){return d.status==='funding';}).length;
+    var s=[['Capital raised',gbpm(raised)],['Investors',inv.toLocaleString('en-GB')],['Live deals',live],['In funding',funding]];
+    $('#home-stats').innerHTML=s.map(function(x){return '<div class="qs"><div class="v">'+x[1]+'</div><div class="k">'+x[0]+'</div></div>';}).join('');
+  })();
+
+  /* overview */
+  function renderOverview(){
+    $('#ov-metrics').innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px">Loading…</div>';
+    Promise.all([Promise.resolve(DB.list()), Promise.resolve(DB.allCommitments()), Promise.resolve(DB.allQuestions())]).then(function(res){
+      var deals=(res[0]||[]).filter(function(d){return d && !d.archived;});
+      var commits=res[1]||[], qs=res[2]||[];
+      var priceById={}; deals.forEach(function(d){ priceById[d.id]=d.sharePrice||0; });
+      var raiseTarget=deals.reduce(function(a,d){return a+(d.sharePrice||0)*(d.sharesTotal||0);},0);
+      var committedShares=0, committedValue=0, investors={}, cmap={};
+      commits.forEach(function(c){ if(priceById[c.deal_id]===undefined) return; var sh=parseInt(c.shares)||0; committedShares+=sh; committedValue+=sh*priceById[c.deal_id]; var who=(c.email||c.name||'').toLowerCase(); if(who) investors[who]=1; cmap[c.deal_id]=(cmap[c.deal_id]||0)+1; });
+      var unanswered=qs.filter(function(q){ return !q.answer && priceById[q.deal_id]!==undefined; }).length;
+      var seenC=getSeenCommits(), newCommits=0; Object.keys(cmap).forEach(function(k){ newCommits+=Math.max(0,cmap[k]-(seenC[k]||0)); });
+      var amco=raiseTarget*0.25, pctC=raiseTarget>0?Math.round(committedValue/raiseTarget*100):0;
+      var m=[
+        ['Live deals', deals.length, 'open to investors','deals'],
+        ['Raise target', gbpm(raiseTarget), 'across live deals','deals'],
+        ['Committed', gbpm(committedValue), pctC+'% of target','commits'],
+        ['Investors', Object.keys(investors).length, 'have committed','investors'],
+        ['Shares reserved', committedShares.toLocaleString('en-GB'), 'of '+deals.reduce(function(a,d){return a+(d.sharesTotal||0);},0).toLocaleString('en-GB'),'shares'],
+        ['Amco co-invest', gbpm(amco), '25% alongside','deals'],
+        ['Open questions', unanswered, 'awaiting reply','questions'],
+        ['Avg share price', deals.length?gbp(Math.round(deals.reduce(function(a,d){return a+(d.sharePrice||0);},0)/deals.length)):'£0', 'per deal','deals']
+      ];
+      $('#ov-metrics').innerHTML=m.map(function(x){return '<div class="card m mtile" data-key="'+x[3]+'" style="padding:13px;cursor:pointer"><div class="k">'+x[0]+'</div><div class="v">'+x[1]+'</div><div class="s">'+x[2]+' →</div></div>';}).join('');
+      function dealTitle(id){ var dd=deals.filter(function(x){return x.id===id;})[0]; return dd?dd.title:'(deal)'; }
+      function drill(key){
+        var box=$('#ov-drill'), h='';
+        if(key==='deals'){ h='<div class="card"><h2>Live deals</h2>'+(deals.length?deals.map(function(d){ var ds=0; commits.forEach(function(c){if(c.deal_id===d.id)ds+=parseInt(c.shares)||0;}); var pc=d.sharesTotal?Math.round(ds/d.sharesTotal*100):0; return '<div class="ovd" data-id="'+escr(d.id)+'" style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--rule);cursor:pointer"><div><b style="font-size:13px">'+escr(d.title)+'</b><div style="font-size:11px;color:var(--muted)">'+gbp(d.sharePrice||0)+'/share · '+ds+'/'+(d.sharesTotal||0)+' shares ('+pc+'%)</div></div><span style="color:var(--clay);font-size:12px;font-weight:700">Open →</span></div>'; }).join('') : '<div style="color:var(--muted);font-size:13px">No live deals.</div>')+'</div>'; }
+        else if(key==='commits'){ h='<div class="card"><h2>All commitments</h2>'+(commits.length?commits.map(function(c){ return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule);font-size:12.5px"><div><b>'+escr(c.name||'Investor')+'</b> <span style="color:var(--muted)">'+escr(dealTitle(c.deal_id))+'</span></div><div style="font-weight:700">'+(parseInt(c.shares)||0)+' shares · '+gbp((parseInt(c.shares)||0)*(priceById[c.deal_id]||0))+'</div></div>'; }).join('') : '<div style="color:var(--muted);font-size:13px">No commitments yet.</div>')+'</div>'; }
+        else if(key==='shares'){
+          var invMap={}; commits.forEach(function(c){ if(priceById[c.deal_id]===undefined) return; var who=((c.email||c.name||'')+'').toLowerCase()||'(anon)'; if(!invMap[who]) invMap[who]={name:c.name||c.email||'Investor', deals:{}, total:0, val:0}; var sh=parseInt(c.shares)||0; invMap[who].deals[c.deal_id]=(invMap[who].deals[c.deal_id]||0)+sh; invMap[who].total+=sh; invMap[who].val+=sh*(priceById[c.deal_id]||0); });
+          var invs=Object.keys(invMap).sort(function(a,b){return invMap[b].total-invMap[a].total;});
+          var dealTot={}, grand=0; deals.forEach(function(d){ dealTot[d.id]=0; }); invs.forEach(function(w){ Object.keys(invMap[w].deals).forEach(function(did){ dealTot[did]=(dealTot[did]||0)+invMap[w].deals[did]; grand+=invMap[w].deals[did]; }); });
+          var hc='font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700;padding:8px 8px;border-bottom:1px solid var(--rule);white-space:nowrap';
+          var bc='font-size:12.5px;padding:9px 8px;border-bottom:1px solid var(--rule)';
+          var grid='grid-template-columns:1.5fr '+deals.map(function(){return 'minmax(80px,1fr)';}).join(' ')+' 0.9fr;';
+          h='<div class="card"><h2>Shares reserved — investors × properties</h2>';
+          if(!invs.length){ h+='<div style="color:var(--muted);font-size:13px">No shares reserved yet.</div></div>'; }
+          else{
+            h+='<div style="overflow-x:auto"><div style="display:grid;'+grid+'min-width:'+(200+deals.length*110+90)+'px">';
+            h+='<div style="'+hc+'">Investor</div>'+deals.map(function(d){return '<div style="'+hc+';text-align:right">'+escr(d.title||'')+'</div>';}).join('')+'<div style="'+hc+';text-align:right">Total</div>';
+            invs.forEach(function(w){ var iv=invMap[w]; h+='<div style="'+bc+'"><b>'+escr(iv.name)+'</b><div style="font-size:10.5px;color:var(--muted)">'+gbp(iv.val)+'</div></div>'+deals.map(function(d){ var s=iv.deals[d.id]||0; return '<div style="'+bc+';text-align:right;'+(s?'':'color:var(--muted)')+'">'+(s||'·')+'</div>'; }).join('')+'<div style="'+bc+';text-align:right;font-weight:800">'+iv.total+'</div>'; });
+            h+='<div style="'+bc+';border-top:2px solid var(--ink)"><b>All investors</b></div>'+deals.map(function(d){ return '<div style="'+bc+';text-align:right;border-top:2px solid var(--ink);font-weight:800">'+(dealTot[d.id]||0)+'</div>'; }).join('')+'<div style="'+bc+';text-align:right;border-top:2px solid var(--ink);font-weight:800">'+grand+'</div>';
+            h+='</div></div><div style="font-size:11.5px;color:var(--muted);margin-top:8px">Each cell is the shares that investor holds in that property. Anyone holding shares across several deals shows once, spread across the columns.</div></div>';
+          }
+        }
+        else if(key==='investors'){ var byInv={}; commits.forEach(function(c){ var who=(c.email||c.name||'').toLowerCase(); if(!who)return; if(!byInv[who]) byInv[who]={name:c.name||c.email,shares:0,val:0}; byInv[who].shares+=parseInt(c.shares)||0; byInv[who].val+=(parseInt(c.shares)||0)*(priceById[c.deal_id]||0); }); var arr=Object.keys(byInv).map(function(k){return byInv[k];}); h='<div class="card"><h2>Investors</h2>'+(arr.length?arr.map(function(x){ return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule);font-size:12.5px"><b>'+escr(x.name)+'</b><div style="font-weight:700">'+x.shares+' shares · '+gbp(x.val)+'</div></div>'; }).join('') : '<div style="color:var(--muted);font-size:13px">No investors yet.</div>')+'</div>'; }
+        else if(key==='questions'){ var un=qs.filter(function(q){return !q.answer && priceById[q.deal_id]!==undefined;}); h='<div class="card"><h2>Open questions</h2>'+(un.length?un.map(function(q){ return '<div class="ovd" data-id="'+escr(q.deal_id)+'" style="padding:8px 0;border-bottom:1px solid var(--rule);font-size:12.5px;cursor:pointer"><div style="color:var(--muted);font-size:11px">'+escr(dealTitle(q.deal_id))+' · '+escr(q.name||'Investor')+'</div><div>'+escr(q.body)+'</div></div>'; }).join('') : '<div style="color:var(--muted);font-size:13px">No open questions.</div>')+'</div>'; }
+        box.innerHTML=h;
+        box.querySelectorAll('.ovd').forEach(function(el){ el.onclick=function(){ var dd=deals.filter(function(x){return x.id===el.dataset.id;})[0]; if(dd) openPubDeal(dd); }; });
+        box.scrollIntoView({block:'nearest'});
+      }
+      $('#ov-metrics').querySelectorAll('.mtile').forEach(function(t){ t.onclick=function(){ drill(t.dataset.key); }; });
+
+      $('#ov-raising').innerHTML = deals.length ? deals.map(function(d){
+        var dShares=0; commits.forEach(function(c){ if(c.deal_id===d.id) dShares+=parseInt(c.shares)||0; });
+        var p=d.sharesTotal? Math.round(dShares/d.sharesTotal*100):0;
+        return '<div style="padding:9px 0;border-bottom:1px solid var(--rule)"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px"><b>'+escr(d.title||'')+'</b><span style="color:var(--muted)">'+p+'% · '+dShares+'/'+(d.sharesTotal||0)+' shares</span></div><div class="bar"><i style="width:'+Math.min(100,p)+'%"></i></div></div>';
+      }).join('') : '<div style="color:var(--muted);font-size:13px;padding:8px 0">No live deals yet. Publish one in <b>New investment</b>.</div>';
+
+      var att=[];
+      if(unanswered>0) att.push('💬 <b>'+unanswered+'</b> unanswered question'+(unanswered===1?'':'s')+' — open a deal to reply.');
+      if(newCommits>0) att.push('👤 <b>'+newCommits+'</b> new commitment'+(newCommits===1?'':'s')+' — open the deal to review.');
+      $('#ov-attention').innerHTML = att.length ? att.map(function(t){return '<div style="padding:8px 0;border-bottom:1px solid var(--rule)">'+t+'</div>';}).join('')
+        : (deals.length ? '<div style="padding:8px 0;color:var(--muted)">All caught up — nothing needs attention.</div>' : '<div style="padding:8px 0;color:var(--muted)">No deals yet. Publish one in <b>New investment</b>.</div>');
+
+      $('#ov-deals').innerHTML = deals.length ? deals.map(function(d){ return '<div class="ovdeal" data-id="'+escr(d.id)+'" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule);cursor:pointer"><div><b style="font-size:13.5px">'+escr(d.title||'')+'</b><div style="font-size:11.5px;color:var(--muted)">'+escr(d.tag||'')+' · '+gbp(d.sharePrice||0)+'/share</div></div><span style="font-size:12px;color:var(--clay);font-weight:700">Open →</span></div>'; }).join('') : '<div style="color:var(--muted);font-size:13px;padding:8px 0">Published deals appear here and on the Deals page.</div>';
+      root.querySelectorAll('#ov-deals .ovdeal').forEach(function(el){ el.onclick=function(){ var dd=deals.filter(function(x){return x.id===el.dataset.id;})[0]; if(dd) openPubDeal(dd); }; });
+    });
+  }
+
+  function mtable(cols,rows){
+    var gt='grid-template-columns:2fr '+cols.slice(1).map(function(){return '1fr';}).join(' ')+';';
+    var h='<div style="display:grid;'+gt+'">';
+    h+=cols.map(function(c,i){return '<div style="font-size:9.5px;text-transform:uppercase;letter-spacing:0.03em;color:var(--muted);font-weight:700;padding:8px 6px;border-bottom:1px solid var(--rule);'+(i>0?'text-align:right':'')+'">'+c+'</div>';}).join('');
+    rows.forEach(function(r){ h+=r.map(function(cell,i){return '<div style="font-size:12.5px;padding:10px 6px;border-bottom:1px solid var(--rule);'+(i>0?"text-align:right;font-family:'Space Grotesk';font-variant-numeric:tabular-nums;font-weight:600":'font-weight:600')+'">'+cell+'</div>';}).join(''); });
+    return h+'</div>';
+  }
+  function openMetric(key){
+    if(!DEALS.length){ $('#mt-crumb').textContent='Overview'; $('#mt-title').textContent='No data yet'; $('#mt-value').textContent='—'; $('#mt-note').textContent='These business metrics populate once deals are live. Your published deals are on the Deals page.'; $('#mt-subs').innerHTML=''; $('#mt-table').innerHTML=''; go('metric'); return; }
+    var funding=DEALS.filter(function(d){return d.status==='funding';}), live=DEALS.filter(function(d){return d.status==='live';});
+    var totalRaised=DEALS.reduce(function(a,d){return a+raisedOf(d);},0);
+    var c;
+    if(key==='raised') c={title:'Capital raised',value:gbpm(totalRaised),note:'Where your raised capital is coming from, deal by deal.',
+      subs:[['From funding',gbpm(funding.reduce(function(a,d){return a+raisedOf(d);},0))],['From live deals',gbpm(live.reduce(function(a,d){return a+d.totalIn;},0))],['Active raises',funding.length],['Largest raise',DEALS.slice().sort(function(a,b){return raisedOf(b)-raisedOf(a);})[0].name.split(',')[0]]],
+      cols:['Deal','Status','Raised','% of total'],rows:DEALS.map(function(d){return [d.name,d.status==='funding'?'Funding':'Live',gbp(raisedOf(d)),Math.round(raisedOf(d)/totalRaised*100)+'%'];})};
+    else if(key==='aum'){ var aumv=live.reduce(function(a,d){return a+d.value;},0);
+      c={title:'Live deals — assets under management',value:gbpm(aumv),note:'Property value across deals that are funded and operating.',
+      subs:[['Live deals',live.length],['Avg value',gbp(aumv/(live.length||1))],['Total loans',gbp(live.reduce(function(a,d){return a+d.loan;},0))],['Uplift created',gbp(live.reduce(function(a,d){return a+d.uplift;},0))]],
+      cols:['Deal','Value','Loan','Equity'],rows:live.map(function(d){return [d.name,gbp(d.value),gbp(d.loan),gbp(d.value-d.loan)];})}; }
+    else if(key==='investors'){ var inv=DEALS.reduce(function(a,d){return a+d.investors;},0);
+      c={title:'Investors',value:inv.toLocaleString('en-GB'),note:'Investor counts by deal. Figures may include repeat investors across deals.',
+      subs:[['Avg per deal',Math.round(inv/DEALS.length)],['Most popular',DEALS.slice().sort(function(a,b){return b.investors-a.investors;})[0].name.split(',')[0]],['Across deals',DEALS.length]],
+      cols:['Deal','Investors','Shares sold','Avg stake'],rows:DEALS.map(function(d){return [d.name,d.investors,d.sold+' / '+d.shares,gbp((d.sold*d.sharePrice)/d.investors)];})}; }
+    else if(key==='amco'){ var amcoT=DEALS.reduce(function(a,d){return a+d.amco*(raisedOf(d)/d.totalIn);},0);
+      c={title:'Amco co-investment',value:gbpm(amcoT),note:'Our own 25% committed alongside investors in every deal.',
+      subs:[['Committed (live)',gbp(live.reduce(function(a,d){return a+d.amco;},0))],['Committed (funding)',gbp(funding.reduce(function(a,d){return a+d.amco*(raisedOf(d)/d.totalIn);},0))],['Deals',DEALS.length]],
+      cols:['Deal','Amco 25%','Status'],rows:DEALS.map(function(d){return [d.name,gbp(d.amco*(d.status==='funding'?raisedOf(d)/d.totalIn:1)),d.status==='funding'?'Funding':'Live'];})}; }
+    else if(key==='distributed'){ var dist=DEALS.reduce(function(a,d){return a+d.distributed;},0),thisMo=live.reduce(function(a,d){return a+(d.monthly?d.monthly.net:0);},0);
+      c={title:'Income distributed',value:gbp(dist),note:'Rental income paid out to investors, after all costs.',
+      subs:[['This month',gbp(thisMo)],['Deals paying',live.length],['Avg / deal',gbp(dist/(live.length||1))]],
+      cols:['Deal','Net / mo','Distributed','Months'],rows:live.map(function(d){return [d.name,gbp(d.monthly.net),gbp(d.distributed),d.monthsRunning];})}; }
+    else if(key==='returned'){ var ret=DEALS.reduce(function(a,d){return a+d.returned;},0);
+      c={title:'Capital returned to investors',value:gbpm(ret),note:'Capital handed back via refinance — freeing investors to recycle it.',
+      subs:[['Deals refinanced',live.length],['Avg returned',gbp(ret/(live.length||1))]],
+      cols:['Deal','Returned','Capital-back %'],rows:live.map(function(d){return [d.name,gbp(d.returned),d.capBack];})}; }
+    else if(key==='funding') c={title:'Deals in funding',value:funding.length,note:'Live raises and how they are progressing.',
+      subs:[['Total target',gbp(funding.reduce(function(a,d){return a+d.totalIn;},0))],['Raised so far',gbp(funding.reduce(function(a,d){return a+raisedOf(d);},0))],['Closing soonest',funding.slice().sort(function(a,b){return a.closesDays-b.closesDays;})[0].name.split(',')[0]]],
+      cols:['Deal','% funded','Investors','Closes in'],rows:funding.map(function(d){return [d.name,Math.round(d.sold/d.shares*100)+'%',d.investors,d.closesDays+' days'];})};
+    else c={title:'Live & earning',value:live.length,note:'Funded deals now refinanced and producing income.',
+      subs:[['AUM',gbpm(live.reduce(function(a,d){return a+d.value;},0))],['Net / mo',gbp(live.reduce(function(a,d){return a+(d.monthly?d.monthly.net:0);},0))]],
+      cols:['Deal','Value','Net / mo','Months'],rows:live.map(function(d){return [d.name,gbp(d.value),gbp(d.monthly.net),d.monthsRunning];})};
+    $('#mt-crumb').textContent=c.title; $('#mt-title').textContent=c.title; $('#mt-value').textContent=c.value; $('#mt-note').textContent=c.note;
+    $('#mt-subs').innerHTML=c.subs.map(function(s){return '<div class="card m" style="padding:13px"><div class="k">'+s[0]+'</div><div class="v">'+s[1]+'</div></div>';}).join('');
+    $('#mt-table').innerHTML=mtable(c.cols,c.rows);
+    go('metric');
+  }
+
+  /* deals list */
+  function dealRow(d){
+    var p=Math.round(d.sold/d.shares*100);
+    return '<div class="drow" data-id="'+d.id+'"><div class="dswatch" style="background:'+d.grad+'"></div>'+
+      '<div style="flex:1 1 160px"><h4>'+d.name+'</h4><div class="sub">'+d.desc+' · '+gbp(d.sharePrice)+'/share</div></div>'+
+      '<div style="flex:0 0 120px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">'+(d.status==='funding'?p+'% funded':'Fully funded')+'</div><div class="bar"><i style="width:'+(d.status==='funding'?p:100)+'%"></i></div></div>'+
+      '<div style="flex:0 0 70px;text-align:right;font-size:12px"><b>'+d.investors+'</b><div style="color:var(--muted);font-size:10px">investors</div></div>'+
+      '<span class="status '+d.status+'">'+(d.status==='funding'?'Funding':'Live')+'</span>'+
+      '<span class="risk '+d.risk+'">'+d.risk.charAt(0).toUpperCase()+d.risk.slice(1)+'</span></div>';
+  }
+  function getSeenCommits(){ try{return JSON.parse(window.localStorage.getItem('amco_seen_commits')||'{}');}catch(e){return {};} }
+  function setSeenCommit(id,count){ var s=getSeenCommits(); s[id]=count; try{window.localStorage.setItem('amco_seen_commits',JSON.stringify(s));}catch(e){} }
+  function renderCommitBar(panel, rows, d){
+    rows=rows||[];
+    var total=d.sharesTotal||0;
+    var committed=rows.reduce(function(a,r){return a+(parseInt(r.shares)||0);},0);
+    var remaining=Math.max(0,total-committed);
+    var pctv=total? Math.round(committed/total*100):0;
+    panel.innerHTML='<div style="display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap">'+
+      '<div style="text-align:center"><div style="position:relative;width:66px;height:170px;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:#F1F0EE">'+
+        '<div class="commit-fill" style="position:absolute;left:0;right:0;bottom:0;height:'+pctv+'%;min-height:'+(committed>0?'6px':'0')+';background:var(--clay);cursor:pointer" title="Click for investor breakdown"></div>'+
+      '</div><div style="font-size:11px;color:var(--muted);margin-top:6px">'+pctv+'% committed</div></div>'+
+      '<div style="font-size:13px;line-height:1.9">'+
+        '<div><span style="color:var(--clay)">■</span> Committed: <b>'+committed+'</b> shares · '+gbp(committed*(d.sharePrice||0))+'</div>'+
+        '<div><span style="color:#C9CCC6">■</span> Remaining: <b>'+remaining+'</b> shares · '+gbp(remaining*(d.sharePrice||0))+'</div>'+
+        '<div style="color:var(--muted);margin-top:4px;font-size:12px">'+rows.length+' investor'+(rows.length===1?'':'s')+' · tap the red bar for the breakdown</div>'+
+      '</div>'+
+    '</div>'+
+    '<div id="commit-breakdown" style="display:none;margin-top:14px"></div>';
+    var fill=panel.querySelector('.commit-fill'), bd=panel.querySelector('#commit-breakdown');
+    if(fill) fill.onclick=function(){ if(bd.style.display==='none'){ renderCommits(bd,rows,d); bd.style.display='block'; } else { bd.style.display='none'; } };
+  }
+  function renderUpdates(panel, d){
+    var ups=(d.updates||[]).slice().reverse();
+    panel.innerHTML = ups.length
+      ? '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700;margin-bottom:6px">Update history</div>'+ups.map(function(u){ var sm=stageMeta(u.stage); var dt=new Date(u.at); return '<div style="border-bottom:1px solid var(--rule);padding:8px 0"><div style="font-size:11px;color:var(--clay);font-weight:700">'+sm.label+' · '+dt.toLocaleDateString('en-GB')+'</div><div style="font-size:12.5px;margin-top:2px">'+escr(u.text)+'</div></div>'; }).join('')
+      : '<div style="font-size:12px;color:var(--muted)">No updates posted yet.</div>';
+  }
+  function openPubDeal(d){
+    if(!d) return;
+    var closeAt=d.closeAt||(Date.now()+((d.closesDays||14)*86400000));
+    var kv=function(arr){ return (arr||[]).map(function(r){return '<div class="kv"><span>'+escr(r[0])+'</span><b>'+escr(r[1])+'</b></div>';}).join(''); };
+    var p=d.per||{}; var st=stageMeta(d.stage||'funding');
+    var figs=[['Share price',gbp(d.sharePrice||0)],['Total shares',d.sharesTotal||'—'],['Min per investor',(d.minShares||1)+' share'+((d.minShares||1)>1?'s':'')],['Day-one yield',d.dayYield||'—'],['After-refi yield',d.refiYield||'—'],['Capital back',d.capBack||'—'],['Stage',st.label]];
+    var perRows=[['Cash back at refinance',gbp(p.cashout||0)],['Money left in',gbp(p.leftIn||0)],['Income day one',gbp(p.day||0)+' / yr'],['Income after refi',gbp(p.refi||0)+' / yr']];
+    var actions = d.archived
+      ? '<button class="btn btn-ghost" id="pd2-restore" style="font-size:12.5px">Restore</button><button class="btn" id="pd2-delete" style="font-size:12.5px;background:var(--danger);border-color:var(--danger)">Delete permanently</button>'
+      : '<button class="btn" id="pd2-edit" style="font-size:12.5px">Edit deal</button><button class="btn btn-ghost" id="pd2-archive" style="font-size:12.5px">Archive</button>';
+    var stepper='<div style="display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 14px">'+STAGES.map(function(s,i){ var done=i<=st.idx; return '<div title="'+s[2]+'" style="flex:1 1 auto;min-width:64px;text-align:center;padding:7px 5px;border-radius:8px;font-size:10px;font-weight:700;'+(done?'background:var(--clay);color:#fff':'background:#F1F0EE;color:var(--muted)')+'">'+s[1]+'</div>'; }).join('')+'</div>';
+    var stageOpts=STAGES.map(function(s){ return '<option value="'+s[0]+'"'+(s[0]===st.key?' selected':'')+'>'+s[1]+'</option>'; }).join('');
+    var html='<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'+
+      '<div class="dswatch" style="width:48px;height:48px;flex:0 0 48px;background:'+(d.grad||'linear-gradient(135deg,#3F7A5C,#2C5D6B)')+'"></div>'+
+      '<div style="flex:1"><h1 class="disp" style="font-size:24px;margin:0">'+escr(d.title||'(untitled)')+'</h1><div style="font-size:12.5px;color:var(--muted)">'+escr(d.tag||'')+(d.desc?' · '+escr(d.desc):'')+'</div></div>'+
+      '<span class="risk '+(d.risk||'low')+'">'+capr(d.risk)+'</span></div>'+
+      '<div style="font-size:11.5px;color:var(--muted);margin-bottom:2px">Time left to invest / close</div>'+
+      '<div class="closes admin-cd" data-dl="'+closeAt+'" style="font-weight:700;font-size:14px;margin-bottom:14px"><span class="cd"></span></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'+actions+'</div>'+
+      '<div class="card"><h2>Progress &amp; investor updates</h2>'+
+        '<div style="font-size:12px;color:var(--muted)">Current stage: <b style="color:var(--ink)">'+st.label+'</b> — '+escr(st.desc)+'</div>'+stepper+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:12.5px;font-weight:600">Move to stage:</span><select id="pd2-stage" style="border:1px solid var(--rule);border-radius:8px;padding:7px 9px;font-size:12.5px">'+stageOpts+'</select></div>'+
+        '<textarea id="pd2-update" placeholder="Write an update investors will see (e.g. &quot;Works have started on site&quot;)…" style="width:100%;border:1px solid var(--rule);border-radius:10px;padding:10px;font-family:inherit;font-size:13px;min-height:60px;outline:none;resize:vertical"></textarea>'+
+        '<button class="btn" id="pd2-postupdate" style="margin-top:8px;font-size:12.5px">Post update &amp; notify investors</button>'+
+        '<span id="pd2-updatedone" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-left:10px"></span>'+
+        '<div id="pd2-updates" style="margin-top:14px"></div>'+
+      '</div>'+
+      '<div class="grid2" style="margin-top:16px">'+
+        '<div class="card"><h2>Key figures</h2>'+kv(figs)+'</div>'+
+        '<div class="card"><h2>The deal, in full</h2>'+kv(d.breakdown)+'</div>'+
+      '</div>'+
+      '<div class="grid2" style="margin-top:16px">'+
+        '<div class="card"><h2>Property details</h2>'+((d.details&&d.details.length)?kv(d.details):'<div style="color:var(--muted);font-size:13px">None entered. Use <b>Edit deal</b> → Property breakdown to add bedrooms, floor area, etc.</div>')+'</div>'+
+        '<div class="card"><h2>Per share</h2>'+kv(perRows)+'</div>'+
+      '</div>'+
+      '<div class="card" style="margin-top:16px"><h2>Committed investors</h2><div id="pd2-commits"><div style="font-size:12px;color:var(--muted)">Loading…</div></div></div>'+
+      '<div class="card" style="margin-top:16px"><h2>Questions &amp; answers</h2><div id="pd2-qa"><div style="font-size:12px;color:var(--muted)">Loading…</div></div></div>'+
+      '<div class="card" style="margin-top:16px"><h2>Why this risk rating</h2><ul style="margin:0;padding:0;list-style:none;font-size:12.5px;color:var(--muted)">'+(d.reasons||[]).map(function(r){return '<li style="margin-bottom:6px">'+escr(r)+'</li>';}).join('')+'</ul></div>'+
+      '<div style="margin-top:16px"><a class="btn btn-ghost" data-go="deals">← Back to deals</a></div>';
+    $('#pd2-content').innerHTML=html;
+    $('#pd2-crumb').textContent=d.title||'Deal';
+    go('pubdeal'); updateAdminCountdowns();
+    renderUpdates($('#pd2-updates'), d);
+    Promise.resolve(DB.commitments(d.id)).then(function(rows){ renderCommitBar($('#pd2-commits'),rows,d); setSeenCommit(d.id,(rows||[]).length); refreshQADot(); });
+    Promise.resolve(DB.questions(d.id)).then(function(rows){ renderQAadmin($('#pd2-qa'),rows,d); });
+    var ed=$('#pd2-edit'); if(ed) ed.onclick=function(){ populateForm(d); };
+    var pu=$('#pd2-postupdate'); if(pu) pu.onclick=function(){
+      var txt=($('#pd2-update').value||'').trim(), stg=$('#pd2-stage').value;
+      if(!txt && stg===(d.stage||'funding')){ var done=$('#pd2-updatedone'); done.style.display='inline'; done.style.color='var(--muted)'; done.textContent='Write an update or change the stage first.'; return; }
+      d.stage=stg; if(txt){ d.updates=(d.updates||[]); d.updates.push({at:Date.now(), stage:stg, text:txt}); }
+      pu.textContent='Posting…';
+      Promise.resolve(DB.patch(d)).then(function(){ renderDeals(); openPubDeal(d); });
+    };
+    var ar=$('#pd2-archive'); if(ar) ar.onclick=function(){ d.archived=true; ar.textContent='…'; Promise.resolve(DB.patch(d)).then(function(){ refreshQADot(); renderDeals(); go('deals'); }); };
+    var rs=$('#pd2-restore'); if(rs) rs.onclick=function(){ d.archived=false; rs.textContent='…'; Promise.resolve(DB.patch(d)).then(function(){ renderDeals(); go('deals'); }); };
+    var dl=$('#pd2-delete'); if(dl) dl.onclick=function(){ if(window.confirm('Permanently delete \u201c'+(d.title||'this deal')+'\u201d? This cannot be undone.')){ dl.textContent='…'; Promise.resolve(DB.remove(d.id)).then(function(){ renderDeals(); go('deals'); }); } };
+  }
+  function renderDeals(openQA){
+    var el=$('#deals-list');
+    el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px">Loading your deals…</div>';
+    Promise.all([Promise.resolve(DB.list()), Promise.resolve(DB.allQuestions()), Promise.resolve(DB.allCommitments())]).then(function(res){
+      var list=res[0]||[], qs=res[1]||[], cs=res[2]||[];
+      var unq={}; qs.forEach(function(q){ if(!q.answer){ unq[q.deal_id]=(unq[q.deal_id]||0)+1; } });
+      var cmap={}; cs.forEach(function(c){ cmap[c.deal_id]=(cmap[c.deal_id]||0)+1; });
+      var seenC=getSeenCommits();
+      var live=list.filter(function(d){return d&&!d.archived&&d.stage!=='sold';});
+      var completed=list.filter(function(d){return d&&!d.archived&&d.stage==='sold';});
+      var arch=list.filter(function(d){return d&&d.archived;});
+      function nc(d){ return Math.max(0,(cmap[d.id]||0)-(seenC[d.id]||0)); }
+      var html='<h2 style="margin:0 0 6px">Live deals</h2>';
+      html += live.length ? live.map(function(d){return pubRow(d,false,unq[d.id]||0,nc(d));}).join('')
+                          : '<div style="color:var(--muted);font-size:13px;padding:8px 0 12px">No live deals yet. Build one in <b>New investment</b> and hit Publish — it\u2019ll appear here and on the investor site.</div>';
+      if(completed.length){ html+='<h2 style="margin:22px 0 6px">Completed</h2>'+completed.map(function(d){return pubRow(d,false,unq[d.id]||0,nc(d));}).join(''); }
+      if(arch.length){ html+='<h2 style="margin:22px 0 6px">Archived</h2>'+arch.map(function(d){return pubRow(d,true,unq[d.id]||0,nc(d));}).join(''); }
+      el.innerHTML=html;
+      var all=live.concat(completed).concat(arch);
+      bindDealActions(all);
+      updateAdminCountdowns();
+    });
+  }
+  function capr(s){ return (s||'').charAt(0).toUpperCase()+(s||'').slice(1); }
+  function escr(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  var ICON_MSG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z"/></svg>';
+  var ICON_PPL='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+  function notifBadge(svg,count,label){ return '<span title="'+label+'" style="display:inline-flex;align-items:center;gap:4px;background:var(--clay);color:#fff;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;line-height:1">'+svg+count+'</span>'; }
+  function pubRow(d,archived,unanswered,newCommits){
+    unanswered=unanswered||0; newCommits=newCommits||0;
+    var closeAt=d.closeAt||(Date.now()+((d.closesDays||14)*86400000));
+    var icons='';
+    if(unanswered>0) icons+=notifBadge(ICON_MSG,unanswered,unanswered+' unanswered question'+(unanswered===1?'':'s'));
+    if(newCommits>0) icons+=notifBadge(ICON_PPL,newCommits,newCommits+' new commitment'+(newCommits===1?'':'s'));
+    return '<div class="drow deal-open" data-id="'+escr(d.id)+'" style="cursor:pointer;opacity:'+(archived?'0.7':'1')+'">'+
+      '<div class="dswatch" style="background:'+(d.grad||'linear-gradient(135deg,#3F7A5C,#2C5D6B)')+'"></div>'+
+      '<div style="flex:1 1 150px"><h4>'+escr(d.title||'(untitled deal)')+'</h4><div class="sub">'+escr(d.tag||'')+' · '+gbp(d.sharePrice||0)+'/share</div></div>'+
+      (archived?'<span class="status completed" style="flex:0 0 auto">Archived</span>'
+               :'<div class="closes admin-cd" data-dl="'+closeAt+'" style="flex:0 0 92px;font-size:12px;font-weight:600;text-align:right"><span class="cd"></span></div>')+
+      '<span class="risk '+(d.risk||'low')+'">'+capr(d.risk)+'</span>'+
+      (icons?'<div style="display:flex;gap:6px">'+icons+'</div>':'')+
+      '<span style="font-size:12px;color:var(--clay);font-weight:700;white-space:nowrap">Open \u2192</span>'+
+    '</div>';
+  }
+  function renderQAadmin(panel, rows, d){
+    rows=rows||[];
+    if(!rows.length){ panel.innerHTML='<div style="font-size:12.5px;color:var(--muted)">No questions on this deal yet.</div>'; return; }
+    panel.innerHTML=rows.map(function(q){
+      var ans = q.answer
+        ? '<div style="background:var(--clayBg);border-radius:8px;padding:7px 10px;margin-top:6px;font-size:12px"><b style="color:var(--clay)">Your reply:</b> '+escr(q.answer)+'</div>'
+        : '<div style="display:flex;gap:6px;margin-top:6px"><input class="qa-reply" data-id="'+escr(q.id)+'" placeholder="Type a reply…" style="flex:1;border:1px solid var(--rule);border-radius:7px;padding:7px 9px;font-size:12.5px;outline:none"><button class="btn qa-send-admin" data-id="'+escr(q.id)+'" style="font-size:12px;padding:7px 12px">Reply</button></div>';
+      return '<div style="border-bottom:1px solid var(--rule);padding:9px 0"><div style="font-size:12.5px"><b>'+escr(q.name||'Investor')+'</b> <span style="color:var(--muted);font-size:11px">asked</span></div><div style="font-size:12.5px;margin:2px 0 0">'+escr(q.body)+'</div>'+ans+'</div>';
+    }).join('');
+    panel.querySelectorAll('.qa-send-admin').forEach(function(b){ b.onclick=function(){
+      var id=b.dataset.id, inp=panel.querySelector('.qa-reply[data-id="'+id+'"]'), ans=(inp.value||'').trim(); if(!ans)return;
+      b.textContent='…';
+      Promise.resolve(DB.answer(id,ans)).then(function(){ Promise.resolve(DB.questions(d.id)).then(function(rows2){ renderQAadmin(panel,rows2,d); refreshQADot(); }); });
+    }; });
+  }
+  function refreshQADot(){ Promise.all([Promise.resolve(DB.list()), Promise.resolve(DB.allQuestions()), Promise.resolve(DB.allCommitments())]).then(function(res){
+    var deals=res[0]||[], qs=res[1]||[], cs=res[2]||[], ids={};
+    deals.forEach(function(d){ if(d&&!d.archived) ids[d.id]=1; });
+    var un=qs.filter(function(q){ return !q.answer && ids[q.deal_id]; }).length;
+    var cmap={}; cs.forEach(function(c){ if(ids[c.deal_id]) cmap[c.deal_id]=(cmap[c.deal_id]||0)+1; });
+    var seen=getSeenCommits(), newC=0; Object.keys(cmap).forEach(function(k){ newC+=Math.max(0,cmap[k]-(seen[k]||0)); });
+    var dot=$('#qa-dot'); if(dot){ dot.style.display=(un>0||newC>0)?'inline-block':'none'; dot.title=un+' question'+(un===1?'':'s')+' · '+newC+' new commitment'+(newC===1?'':'s'); } }); }
+  function renderCommits(panel,rows,d){
+    rows=rows||[];
+    if(!rows.length){ panel.innerHTML='<div style="font-size:12.5px;color:var(--muted)">No one has committed to this deal yet.</div>'; return; }
+    var totalShares=rows.reduce(function(a,r){return a+(parseInt(r.shares)||0);},0);
+    var html='<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.03em;color:var(--muted);font-weight:700;margin-bottom:8px">'+rows.length+' investor'+(rows.length>1?'s':'')+' · '+totalShares+' shares · '+gbp(totalShares*(d.sharePrice||0))+' committed</div>';
+    html+=rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--rule);font-size:12.5px"><div><b>'+escr(r.name||'Investor')+'</b>'+(r.email?' <span style="color:var(--muted)">'+escr(r.email)+'</span>':'')+'</div><div style="font-family:\'Space Grotesk\',sans-serif;font-weight:700">'+(parseInt(r.shares)||0)+' shares</div></div>'; }).join('');
+    panel.innerHTML=html;
+  }
+  function bindDealActions(list){
+    var map={}; list.forEach(function(d){map[d.id]=d;});
+    $('#deals-list').querySelectorAll('.deal-open').forEach(function(row){ row.onclick=function(){ var d=map[row.dataset.id]; if(d) openPubDeal(d); }; });
+  }
+  function admLeft(dl){ var diff=dl-Date.now(); if(diff<=0)return 'Closed'; var d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000); if(diff<86400000) return '\u23f3 '+h+'h '+m+'m '+s+'s'; return d+'d '+h+'h'; }
+  function updateAdminCountdowns(){ root.querySelectorAll('.admin-cd[data-dl]').forEach(function(e){ var dl=Number(e.dataset.dl); var cd=e.querySelector('.cd'); if(cd) cd.textContent=admLeft(dl); var diff=dl-Date.now(); e.style.color=(diff<3*86400000)?'var(--clay)':'var(--muted)'; e.style.fontWeight=(diff>0&&diff<86400000)?'800':'600'; }); }
+  setInterval(updateAdminCountdowns,1000);
+  refreshQADot(); setInterval(refreshQADot, 30000);
+  function bindRows(sel){ root.querySelectorAll(sel+' .drow').forEach(function(r){ r.onclick=function(){ openDeal(r.dataset.id); }; }); }
+
+  /* per-deal dashboard */
+  function openDeal(id){
+    var d=byId[id];
+    $('#pd-crumb').textContent=d.name; $('#pd-sw').style.background=d.grad;
+    $('#pd-title').textContent=d.name; $('#pd-sub').textContent=d.desc+' · '+gbp(d.sharePrice)+' per share · '+d.shares+' shares';
+    $('#pd-status').className='status '+d.status; $('#pd-status').textContent=d.status==='funding'?'Funding':'Live';
+    $('#pd-risk').className='risk '+d.risk; $('#pd-risk').textContent=d.risk.charAt(0).toUpperCase()+d.risk.slice(1)+' risk';
+
+    $('#pd-stage').innerHTML=STAGES.map(function(s,i){ var cls=i<d.stageIdx?'on':(i===d.stageIdx?'on cur':''); return '<div class="spip '+cls+'"><div class="d"></div><div class="l">'+s+'</div></div>'; }).join('');
+
+    var p=Math.round(d.sold/d.shares*100);
+    if(d.status==='funding'){
+      $('#pd-fundtitle').textContent='Funding';
+      $('#pd-fund').innerHTML='<div class="kv"><span>Raised</span><b>'+gbp(raisedOf(d))+' of '+gbp(d.totalIn)+'</b></div>'+
+        '<div class="kv"><span>Shares sold</span><b>'+d.sold+' / '+d.shares+'</b></div>'+
+        '<div class="kv"><span>Investors</span><b>'+d.investors+'</b></div>'+
+        '<div class="kv"><span>Closes in</span><b>'+d.closesDays+' days</b></div>'+
+        '<div class="bar" style="margin-top:10px"><i style="width:'+p+'%"></i></div>';
+    } else {
+      $('#pd-fundtitle').textContent='Status';
+      $('#pd-fund').innerHTML='<div class="kv"><span>Funding</span><b>Fully funded</b></div>'+
+        '<div class="kv"><span>Investors</span><b>'+d.investors+'</b></div>'+
+        '<div class="kv"><span>Capital returned to investors</span><b>'+gbp(d.returned)+'</b></div>'+
+        '<div class="kv"><span>Months running</span><b>'+d.monthsRunning+'</b></div>';
+    }
+
+    if(d.monthly){
+      var mo=d.monthly;
+      $('#pd-month').innerHTML='<div class="kv"><span>Gross rent</span><b>'+gbp(mo.gross)+'</b></div>'+
+        '<div class="kv"><span>− Management</span><b>−'+gbp(mo.mgmt)+'</b></div>'+
+        '<div class="kv"><span>− Insurance</span><b>−'+gbp(mo.ins)+'</b></div>'+
+        '<div class="kv"><span>− Mortgage interest</span><b>−'+gbp(mo.int)+'</b></div>'+
+        '<div class="kv net"><span>Net distributed to investors</span><b>'+gbp(mo.net)+'</b></div>';
+    } else {
+      $('#pd-month').innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0">Not yet earning — this deal is still raising. Income begins once the property completes.</div>';
+    }
+
+    $('#pd-figs').innerHTML=[['Total raised',gbp(d.totalIn)],['Property value',gbp(d.value)],['Refinance loan',gbp(d.loan)],['Money left in',gbp(d.leftIn)],['Day-one yield',d.dayYield],['After-refi yield',d.refiYield],['Value created',gbp(d.uplift)],['Amco co-invest (25%)',gbp(d.amco)]].map(function(r){return '<div class="kv"><span>'+r[0]+'</span><b>'+r[1]+'</b></div>';}).join('');
+
+    var names=['JS','MR','AP','LT','KD','RH','EO','BN'];
+    var rows=Math.min(5,d.investors);
+    var html='';
+    for(var i=0;i<rows;i++){ var sh=Math.max(1,Math.round(d.sold/d.investors)+(i%2?1:-1)); html+='<div class="irow"><div class="ava">'+names[i]+'</div><div style="flex:1"><b style="font-size:12.5px">Investor '+(i+1)+'</b></div><div style="text-align:right"><b style="font-family:\'Space Grotesk\'">'+sh+' shares</b><div style="font-size:10px;color:var(--muted)">'+gbp(sh*d.sharePrice)+'</div></div></div>'; }
+    $('#pd-investors').innerHTML=html;
+    $('#pd-icount').textContent='· '+d.investors+' total';
+
+    $('#pd-action').style.display='none';
+    go('deal');
+  }
+  $('#pd-advance').onclick=function(){ $('#pd-action').textContent='✓ Stage advanced (demo).'; $('#pd-action').style.display='block'; };
+  $('#pd-distribute').onclick=function(){ $('#pd-action').textContent='✓ Income distribution queued to investors (demo).'; $('#pd-action').style.display='block'; };
+  $('#pd-close').onclick=function(){ $('#pd-action').textContent='✓ Raise closed (demo).'; $('#pd-action').style.display='block'; };
+
+  /* ---- builder ---- */
+  var n=function(id){return parseFloat(String($('#'+id).value).replace(/,/g,''))||0;};
+  var gbp2=function(v){return '£'+v.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});};
+  var pct=function(v){return (v*100).toFixed(1)+'%';};
+  var bRisk='low';
+  var EDIT_ID=null, EDIT_DEAL=null;
+  var STAGES=[['funding','Funding','Raising capital from investors'],['funded','Funded','Fully committed — raise closed'],['purchased','Purchased','Property bought'],['refurb','Refurbishing','Works underway'],['refinanced','Refinanced','Capital returned to investors'],['let','Let & earning','Stabilised and producing income'],['sold','Sold — completed','Exited; final returns paid']];
+  function stageMeta(key){ for(var i=0;i<STAGES.length;i++){ if(STAGES[i][0]===key) return {idx:i,key:STAGES[i][0],label:STAGES[i][1],desc:STAGES[i][2]}; } return {idx:0,key:'funding',label:'Funding',desc:STAGES[0][2]}; }
+  var dd=new Date(Date.now()+9*86400000); $('#f-close').value=dd.toISOString().slice(0,10);
+  function sdltFor(price, residential){
+    if(!price||price<=0) return 0;
+    var bands = residential
+      ? [[125000,0.05],[250000,0.07],[925000,0.10],[1500000,0.15],[Infinity,0.17]]
+      : [[150000,0.00],[250000,0.02],[Infinity,0.05]];
+    var tax=0, lower=0;
+    for(var i=0;i<bands.length;i++){ var cap=bands[i][0], rate=bands[i][1]; var portion=Math.max(0, Math.min(price,cap)-lower); tax+=portion*rate; lower=cap; if(price<=cap) break; }
+    return Math.round(tax);
+  }
+  var REQUIRED=['f-name','f-desc','f-price','f-legals','f-works','f-value','f-ltv','f-rate','f-loanfee','f-cur','f-aft','f-mgmt','f-ins','f-shares'];
+  function validate(){
+    var ok=REQUIRED.every(function(id){ var el=$('#'+id); return el && String(el.value).trim()!==''; });
+    var btn=$('#publish'); if(btn){ btn.disabled=!ok; btn.style.opacity=ok?'1':'0.5'; btn.style.cursor=ok?'pointer':'not-allowed'; }
+    return ok;
+  }
+  function recompute(){
+    var price=n('f-price'),legals=n('f-legals'),works=n('f-works'),value=n('f-value'),ltv=n('f-ltv'),rate=n('f-rate'),loanFee=n('f-loanfee');
+    var typeV=$('#f-type').value, sdlt=sdltFor(price, typeV==='residential'); $('#f-sdlt').value = sdlt? sdlt.toLocaleString('en-GB') : '';
+    var cur=n('f-cur')*parseFloat($('#f-cur-u').value),aft=n('f-aft')*parseFloat($('#f-aft-u').value);
+    var mgmt=n('f-mgmt'),vat=parseFloat($('#f-vat').value),ins=n('f-ins'),plat=n('f-plat'),shares=n('f-shares')||1;
+    var totalIn=price+sdlt+legals+works, sharePrice=totalIn/shares, loan=value*ltv/100, loanFees=loan*loanFee/100, netReleased=loan-loanFees;
+    var capBack=totalIn>0?netReleased/totalIn:0, leftIn=totalIn-netReleased, mgmtEff=mgmt/100*(vat?1.2:1);
+    var dayNet=cur*(1-mgmtEff)-ins-totalIn*plat/100, dayYield=totalIn>0?dayNet/totalIn:0;
+    var interest=loan*rate/100, refiNet=aft*(1-mgmtEff)-ins-interest-totalIn*plat/100, refiYield=leftIn>0?refiNet/leftIn:0, uplift=value-totalIn;
+    $('#o-share').textContent=gbp2(sharePrice); $('#o-shares').textContent=shares+' shares · min 1';
+    $('#o-total').textContent=gbp(totalIn);
+    $('#o-capback').textContent=pct(capBack); $('#o-released').textContent=gbp(netReleased)+' released';
+    $('#o-leftin').textContent=gbp(leftIn);
+    $('#o-dayy').textContent=pct(dayYield); $('#o-daynet').textContent=gbp(dayNet)+'/yr';
+    $('#o-refiy').textContent=pct(refiYield); $('#o-refinet').textContent=gbp(refiNet)+'/yr';
+    $('#o-uplift').textContent=gbp(uplift);
+    $('#o-psback').textContent=gbp(netReleased/shares); $('#o-psleft').textContent=gbp(leftIn/shares)+' left in';
+    var gy=totalIn>0?aft/totalIn:0; $('#warn').textContent = gy>0.30 ? '⚠ Rent after works is '+pct(gy)+' of total cost — check the /mo vs /yr toggle.' : '';
+    validate();
+  }
+  root.querySelectorAll('#page-new input, #page-new select').forEach(function(el){ el.addEventListener('input',recompute); el.addEventListener('change',recompute); });
+  $('#f-risk').addEventListener('click',function(e){ var b=e.target.closest('.rb'); if(!b)return; this.querySelectorAll('.rb').forEach(function(x){x.classList.remove('sel');}); b.classList.add('sel'); bRisk=b.dataset.r; });
+  function propDetails(){
+    var cat=$('#f-cat').value;
+    function v(id){ var el=$('#'+id); var val=el?String(el.value).trim():''; return val===''?'NA':val; }
+    if(cat==='apartments'||cat==='converted'){
+      var arr=[['Number of apartments', UNITS.length||'NA']];
+      var counts={}; UNITS.forEach(function(u){ var k=unitLabel(u.beds); counts[k]=(counts[k]||0)+1; });
+      Object.keys(counts).forEach(function(k){ arr.push([k+' units', counts[k]]); });
+      var baths=UNITS.reduce(function(a,u){return a+(parseFloat(u.baths)||0);},0); arr.push(['Total bathrooms', baths||'NA']);
+      return arr;
+    }
+    if(cat==='house') return [['House type',v('cd-htype')],['Bedrooms',v('cd-beds')],['Bathrooms',v('cd-baths')],['Floor area (sq ft)',v('cd-area')]];
+    if(cat==='portfolio') return [['Houses',v('cd-houses')],['Avg bedrooms each',v('cd-beds')],['Avg bathrooms each',v('cd-baths')]];
+    if(cat==='hmo') return [['Lettable rooms',v('cd-rooms')],['Bathrooms',v('cd-baths')],['Shared kitchens',v('cd-kit')]];
+    if(cat==='office'||cat==='retail'||cat==='leisure') return [['Units',v('cd-units')],['Floor area (sq ft)',v('cd-area')],['Use class',v('cd-use')]];
+    if(cat==='warehouse'||cat==='indunit'||cat==='trade'||cat==='storage') return [['Units',v('cd-units')],['Floor area (sq ft)',v('cd-area')],['Eaves height (m)',v('cd-eaves')],['Use class',v('cd-use')]];
+    if(cat==='shopflats'||cat==='mixedblock') return [['Residential units',v('cd-res')],['Commercial units',v('cd-com')],['Floor area (sq ft)',v('cd-area')]];
+    return [];
+  }
+  function buildDealObject(){
+    var price=n('f-price'),legals=n('f-legals'),works=n('f-works');
+    var sdlt=sdltFor(price, $('#f-type').value==='residential');
+    var value=n('f-value'),ltv=n('f-ltv'),rate=n('f-rate'),loanFee=n('f-loanfee');
+    var cur=n('f-cur')*parseFloat($('#f-cur-u').value), aft=n('f-aft')*parseFloat($('#f-aft-u').value);
+    var mgmt=n('f-mgmt'),vat=parseFloat($('#f-vat').value),ins=n('f-ins'),plat=n('f-plat'),shares=n('f-shares')||1;
+    var totalIn=price+sdlt+legals+works, sharePrice=totalIn/shares, loan=value*ltv/100, loanFees=loan*loanFee/100, netReleased=loan-loanFees;
+    var capBack=totalIn>0?netReleased/totalIn:0, leftIn=totalIn-netReleased, mgmtEff=mgmt/100*(vat?1.2:1);
+    var dayNet=cur*(1-mgmtEff)-ins-totalIn*plat/100, dayYield=totalIn>0?dayNet/totalIn:0;
+    var interest=loan*rate/100, refiNet=aft*(1-mgmtEff)-ins-interest-totalIn*plat/100, refiYield=leftIn>0?refiNet/leftIn:0;
+    var gbpr=function(v){return '£'+Math.round(v).toLocaleString('en-GB');}, pctS=function(v){return (v*100).toFixed(1)+'%';};
+    var typeV=$('#f-type').value, catSel=$('#f-cat'), catLabel=catSel.options[catSel.selectedIndex]?catSel.options[catSel.selectedIndex].text:'';
+    var risk=bRisk, riskN=risk==='low'?1:risk==='medium'?2:3, loanmo=n('f-loanmo')||10;
+    var typeLabel=typeV.charAt(0).toUpperCase()+typeV.slice(1);
+    var closeVal=$('#f-close').value, closesDays=closeVal?Math.max(0,Math.ceil((new Date(closeVal)-Date.now())/86400000)):14;
+    var closeAt=closeVal?new Date(closeVal+'T23:59:59').getTime():(Date.now()+closesDays*86400000);
+    var grad=risk==='low'?'linear-gradient(135deg,#3F7A5C,#2C5D6B)':risk==='medium'?'linear-gradient(135deg,#2C5D6B,#14302E)':'linear-gradient(135deg,#B5532E,#8a4424)';
+    var reasons = risk==='high'
+      ? ['• Higher-risk: a '+catLabel.toLowerCase()+' with more moving parts.','• Returns depend on the works and re-letting going to plan.','• Less liquid — exit needs notice and a buyer.']
+      : risk==='medium'
+      ? ['• Medium-risk: a '+catLabel.toLowerCase()+' with a clear plan.','• The income uplift relies on the works completing.','• Capital is committed until refinance and beyond.']
+      : ['• Lower-risk: a straightforward '+catLabel.toLowerCase()+'.','• Tenanted and earning from day one.','• Still property — values can fall as well as rise.'];
+    var cd={}; $('#cat-detail').querySelectorAll('input,select').forEach(function(el){ if(el.id) cd[el.id]=el.value; });
+    var raw={ name:$('#f-name').value, desc:$('#f-desc').value, type:typeV, cat:$('#f-cat').value, price:n('f-price'), legals:n('f-legals'), works:n('f-works'), value:n('f-value'), ltv:n('f-ltv'), rate:n('f-rate'), loanFee:n('f-loanfee'), cur:n('f-cur'), curU:$('#f-cur-u').value, aft:n('f-aft'), aftU:$('#f-aft-u').value, mgmt:n('f-mgmt'), vat:$('#f-vat').value, ins:n('f-ins'), plat:n('f-plat'), shares:n('f-shares'), minShares:n('f-minshares'), coinv:n('f-coinv'), loanmo:n('f-loanmo'), close:$('#f-close').value, risk:bRisk, cd:cd, units:(UNITS||[]).slice() };
+    return {
+      id: EDIT_ID || ('pub_'+Date.now()),
+      publishedAt: (EDIT_DEAL && EDIT_DEAL.publishedAt) || Date.now(),
+      updatedAt: EDIT_DEAL ? Date.now() : null,
+      stage: (EDIT_DEAL && EDIT_DEAL.stage) || 'funding',
+      updates: (EDIT_DEAL && EDIT_DEAL.updates) || [],
+      raw: raw,
+      title:($('#f-name').value||'Untitled deal').trim(), desc:($('#f-desc').value||'').trim(),
+      loc:catLabel+' · '+typeLabel, tag:typeLabel+' · '+catLabel, type:typeV, risk:risk, riskN:riskN,
+      closesDays:closesDays, closeAt:closeAt, fundingPct:0, sharesLeft:shares, sharesTotal:shares, sharePrice:sharePrice, minShares:Math.max(1, n('f-minshares')||1),
+      dayYield:pctS(dayYield), refiYield:pctS(refiYield), capBack:Math.round(capBack*100)+'%', grad:grad,
+      worksTxt: works>0? gbpr(works)+' of works to lift the property and its income.' : 'Bought ready to let.',
+      loanMonths:'By month '+loanmo,
+      per:{ cashout:netReleased/shares, leftIn:leftIn/shares, day:dayNet/shares, refi:refiNet/shares, total5:(netReleased/shares)+(leftIn/shares)+(refiNet/shares*5) },
+      reasons:reasons,
+      breakdown:[['Purchase price',gbpr(price)],['SDLT',gbpr(sdlt)],['Legals',gbpr(legals)],['Works',gbpr(works)],['Total raised',gbpr(totalIn)],['Value after works',gbpr(value)],['Refinance loan',gbpr(loan)],['Income (stabilised)',gbpr(aft)+' / yr']],
+      stmt:{ rentMo: aft/12, insYr: ins, intYr: interest },
+      details: propDetails()
+    };
+  }
+  function reconstructRaw(d){
+    function num(s){ return parseFloat(String(s==null?'':s).replace(/[^0-9.]/g,''))||0; }
+    function bd(label){ var f=(d.breakdown||[]).filter(function(r){return r[0]===label;})[0]; return f?num(f[1]):0; }
+    var price=bd('Purchase price'), legals=bd('Legals'), works=bd('Works'), value=bd('Value after works'), loan=bd('Refinance loan'), aft=bd('Income (stabilised)');
+    var ins=(d.stmt&&d.stmt.insYr)||0, intYr=(d.stmt&&d.stmt.intYr)||0, shares=d.sharesTotal||0;
+    var ltv=value?Math.round(loan/value*100):70;
+    var rate=loan?Math.round(intYr/loan*1000)/10:5.5;
+    var netReleased=(d.per&&d.per.cashout)?d.per.cashout*shares:loan;
+    var loanFee=loan?Math.max(0,Math.round((loan-netReleased)/loan*1000)/10):2;
+    var dayNet=(d.per&&d.per.day)?d.per.day*shares:0;
+    var cur=Math.max(0, Math.round((dayNet+ins)/0.9));
+    var catLabel=((d.tag||'').split(' · ')[1]||'').trim(), cat='';
+    (CATS[d.type]||[]).forEach(function(c){ if(c[1]===catLabel) cat=c[0]; });
+    var closeStr=''; if(d.closeAt){ var dt=new Date(d.closeAt); if(!isNaN(dt.getTime())){ closeStr=dt.toISOString().slice(0,10); } }
+    return { name:d.title||'', desc:d.desc||'', type:d.type||'residential', cat:cat,
+      price:price, legals:legals, works:works, value:value, ltv:ltv, rate:rate, loanFee:loanFee,
+      cur:cur, curU:'1', aft:aft, aftU:'1', mgmt:10, vat:'0', ins:ins, plat:0,
+      shares:shares, minShares:d.minShares||1, coinv:25, loanmo:10, close:closeStr,
+      risk:d.risk||'low', cd:{}, units:[], _recon:true };
+  }
+  function populateForm(d){
+    var r=d.raw;
+    EDIT_ID=d.id; EDIT_DEAL=d;
+    $('#publish').textContent='Save changes';
+    var banner=$('#edit-banner'); if(banner) banner.style.display='block';
+    if(!r){ r=reconstructRaw(d); if(banner) banner.innerHTML='Editing <b>'+escr(d.title||'deal')+'</b> — figures rebuilt from the saved deal. The core numbers are restored; just double-check the day-one rent and management %, then Save.'; }
+    else if(banner){ banner.textContent='Editing: '+(d.title||'deal')+' — change anything and Save.'; }
+    $('#f-name').value=r.name||''; $('#f-desc').value=r.desc||'';
+    $('#f-type').value=r.type||'residential'; populateCats(r.type||'residential');
+    if(r.cat){ $('#f-cat').value=r.cat; renderCatDetail(r.cat); }
+    if(r.units && r.units.length && (r.cat==='apartments'||r.cat==='converted')){ UNITS=r.units.slice(); var ap=$('#cd-apts'); if(ap) ap.value=UNITS.length; if(typeof renderUnits==='function') renderUnits(); }
+    if(r.cd){ Object.keys(r.cd).forEach(function(id){ var el=$('#'+id); if(el) el.value=r.cd[id]; }); }
+    [['f-price',r.price],['f-legals',r.legals],['f-works',r.works],['f-value',r.value],['f-ltv',r.ltv],['f-rate',r.rate],['f-loanfee',r.loanFee],['f-cur',r.cur],['f-aft',r.aft],['f-mgmt',r.mgmt],['f-ins',r.ins],['f-plat',r.plat],['f-shares',r.shares],['f-minshares',r.minShares],['f-coinv',r.coinv],['f-loanmo',r.loanmo]].forEach(function(p){ var el=$('#'+p[0]); if(el && p[1]!=null && p[1]!=='') el.value=p[1]; });
+    if(r.curU){ $('#f-cur-u').value=r.curU; } if(r.aftU){ $('#f-aft-u').value=r.aftU; } if(r.vat){ $('#f-vat').value=r.vat; }
+    if(r.close){ $('#f-close').value=r.close; }
+    bRisk=r.risk||'low'; $('#f-risk').querySelectorAll('.rb').forEach(function(x){x.classList.toggle('sel', x.dataset.r===bRisk);});
+    recompute(); validate();
+    go('new');
+  }
+  function clearForm(){
+    EDIT_ID=null; EDIT_DEAL=null; $('#publish').textContent='Publish investment';
+    var banner=$('#edit-banner'); if(banner) banner.style.display='none';
+    ['f-name','f-desc','f-price','f-legals','f-works','f-value','f-cur','f-aft','f-ins','f-shares','f-minshares','f-sdlt','f-plat'].forEach(function(id){ var el=$('#'+id); if(el) el.value=''; });
+    $('#f-ltv').value='70'; $('#f-rate').value='5.5'; $('#f-loanfee').value='2'; $('#f-mgmt').value='10'; $('#f-coinv').value='25'; $('#f-loanmo').value='10';
+    $('#f-type').value='residential'; $('#f-vat').value='1'; $('#f-cur-u').value='12'; $('#f-aft-u').value='12';
+    var dd2=new Date(Date.now()+9*86400000); $('#f-close').value=dd2.toISOString().slice(0,10);
+    $('#f-risk').querySelectorAll('.rb').forEach(function(x){x.classList.remove('sel');}); var lowb=$('#f-risk').querySelector('.rb[data-r="low"]'); if(lowb) lowb.classList.add('sel'); bRisk='low';
+    UNITS=[]; if(typeof populateCats==='function') populateCats('residential');
+    recompute();
+  }
+  $('#publish').onclick=function(){
+    if($('#publish').disabled) return;
+    var btn=this; var editing=!!EDIT_ID; btn.textContent=editing?'Saving…':'Publishing…';
+    var obj=buildDealObject();
+    Promise.resolve(editing?DB.patch(obj):DB.add(obj)).then(function(ok){
+      if(DB.on && !ok){ var de=$('#pub-done'); de.style.display='block'; de.style.color='var(--danger)'; de.textContent='⚠ Couldn\u2019t save to the shared database — saved in this browser only. Check the Supabase keys and table permissions.'; btn.textContent=EDIT_ID?'Save changes':'Publish investment'; return; }
+      clearForm(); renderDeals();
+      if(editing){ go('deals'); }
+      else { var d=$('#pub-done'); d.style.display='block'; d.style.color='var(--sage)'; d.textContent=DB.on?'✓ Published to the live investor site — investors will see it next time the app loads.':'✓ Saved in this browser. Add your Supabase keys (DEPLOY.md) to share across devices.'; }
+      btn.textContent='Publish investment';
+    });
+  };
+  var px=$('#proto-x'); if(px) px.onclick=function(){ $('#proto-banner').style.display='none'; };
+  recompute();
+
+  /* property category detail */
+  /* per-apartment units */
+  var UNITS=[];
+  function syncUnits(count){ if(count<0)count=0; if(count>60)count=60; while(UNITS.length<count) UNITS.push({beds:'1',baths:'1',size:''}); if(UNITS.length>count) UNITS.length=count; }
+  function unitLabel(b){ return b==='0'?'Studio':(b+'-bed'); }
+  function unitSummary(){ var el=$('#cd-summary'); if(!el)return; var counts={},baths=0;
+    UNITS.forEach(function(u){ var k=unitLabel(u.beds); counts[k]=(counts[k]||0)+1; baths+=parseFloat(u.baths)||0; });
+    var parts=Object.keys(counts).map(function(k){return counts[k]+' × '+k;});
+    el.textContent=UNITS.length+' units · '+parts.join(' · ')+' · '+baths+' bathrooms total'; }
+  function renderUnits(){ var box=$('#cd-units'); if(!box)return;
+    box.innerHTML=UNITS.map(function(u,i){
+      var opts=[['0','Studio'],['1','1 bed'],['2','2 bed'],['3','3 bed'],['4','4 bed']].map(function(o){return '<option value="'+o[0]+'"'+(u.beds===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
+      return '<div class="aptrow"><div class="aptn">Apt '+(i+1)+'</div>'+
+        '<select class="usel" data-i="'+i+'" data-f="beds">'+opts+'</select>'+
+        '<div class="uin"><input class="tnum" data-i="'+i+'" data-f="baths" value="'+u.baths+'"><span>bath</span></div>'+
+        '<div class="uin"><input class="tnum" data-i="'+i+'" data-f="size" value="'+u.size+'" placeholder="—"><span>ft²</span></div></div>';
+    }).join('');
+    box.querySelectorAll('[data-i]').forEach(function(el){ var h=function(){ UNITS[+el.dataset.i][el.dataset.f]=el.value; unitSummary(); }; el.addEventListener('input',h); el.addEventListener('change',h); });
+    unitSummary();
+  }
+
+  function catFields(cat){
+    switch(cat){
+      case 'house': return [['Bedrooms','cd-beds','2'],['Bathrooms','cd-baths','1'],['Floor area (sq ft)','cd-area','']];
+      case 'portfolio': return [['Number of houses','cd-houses','10'],['Avg bedrooms each','cd-beds','3'],['Avg bathrooms each','cd-baths','1']];
+      case 'hmo': return [['Lettable rooms','cd-rooms','6'],['Bathrooms','cd-baths','2'],['Shared kitchens','cd-kit','1']];
+      case 'office': case 'retail': case 'leisure': return [['Number of units','cd-units','1'],['Floor area (sq ft)','cd-area',''],['Use class','cd-use','']];
+      case 'warehouse': case 'indunit': case 'trade': case 'storage': return [['Number of units','cd-units','1'],['Floor area (sq ft)','cd-area',''],['Eaves height (m)','cd-eaves',''],['Use class','cd-use','']];
+      case 'shopflats': case 'mixedblock': return [['Residential units','cd-res','2'],['Commercial units','cd-com','1'],['Total floor area (sq ft)','cd-area','']];
+      default: return [['Details','cd-x','']];
+    }
+  }
+  function renderCatDetail(cat){
+    var box=$('#cat-detail');
+    if(cat==='apartments'||cat==='converted'){
+      box.innerHTML='<div class="sec">'+(cat==='converted'?'Converted flats — describe each unit':'Apartment block — describe each unit')+'</div>'+
+        '<div class="frow"><label class="afield"><span>Number of apartments</span><div class="ig"><input class="tnum" id="cd-apts" value="'+(UNITS.length||14)+'"></div></label><div></div></div>'+
+        '<div id="cd-summary" style="font-size:11.5px;font-weight:700;color:var(--sage);margin:10px 0 6px"></div>'+
+        '<div id="cd-units" style="max-height:300px;overflow:auto;border:1px solid var(--rule);border-radius:10px;padding:2px 10px"></div>';
+      syncUnits(parseInt(String($('#cd-apts').value).replace(/,/g,''))||0); renderUnits();
+      $('#cd-apts').addEventListener('input',function(){ syncUnits(parseInt(String(this.value).replace(/,/g,''))||0); renderUnits(); });
+    } else {
+      var fs=catFields(cat);
+      var extra='';
+      if(cat==='house'){
+        var htypes=['Detached','Semi-detached','Terraced','Mid-terrace','End of terrace','Quasi-semi','Bungalow'];
+        extra='<label class="afield"><span>House type</span><div class="ig"><select class="tnum" id="cd-htype" style="width:100%;border:none;background:none;outline:none;font-family:inherit;font-size:13px;color:var(--ink)">'+htypes.map(function(h){return '<option>'+h+'</option>';}).join('')+'</select></div></label>';
+      }
+      box.innerHTML='<div class="sec">Property breakdown</div><div class="frow">'+extra+fs.map(function(f){return '<label class="afield"><span>'+f[0]+'</span><div class="ig"><input class="tnum" id="'+f[1]+'" value="'+f[2]+'"></div></label>';}).join('')+'</div>';
+    }
+  }
+  var CATS={
+    residential:[['house','House (single)'],['apartments','Apartment block'],['converted','Converted flats'],['portfolio','Portfolio of houses'],['hmo','HMO']],
+    commercial:[['office','Office'],['retail','Retail unit'],['leisure','Leisure / other']],
+    industrial:[['warehouse','Warehouse'],['indunit','Industrial unit'],['trade','Trade counter'],['storage','Storage / logistics']],
+    mixed:[['shopflats','Shop with flats above'],['mixedblock','Mixed-use block']]
+  };
+  function populateCats(type){
+    var list=CATS[type]||CATS.residential;
+    $('#f-cat').innerHTML=list.map(function(o){return '<option value="'+o[0]+'">'+o[1]+'</option>';}).join('');
+    renderCatDetail(list[0][0]);
+  }
+  $('#f-type').addEventListener('change',function(){ populateCats(this.value); });
+  $('#f-cat').addEventListener('change',function(){ renderCatDetail(this.value); });
+  populateCats('residential');
+})();
+</script>
+</div>
