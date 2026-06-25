@@ -856,11 +856,10 @@ export default function App() {
 
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
-    const expCallouts = cohostCalloutExpenses
-      .filter(e => e.property === p)
-      .reduce((a, e) => a + (e.amount || 0), 0);
-    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings: sum(rows, "coHostCalloutCost") + expCallouts };
-  }), [dashFiltered, cohostCalloutExpenses]);
+    // calloutEarnings = coHostCalloutCost from bookings only (expenses already folded in via calc)
+    // We use the original booking coHostCalloutCost, not the recalculated one
+    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings: sum(rows, "coHostCalloutCost") };
+  }), [dashFiltered]);
 
   function DashFilterBar() {
     return (
@@ -1372,7 +1371,7 @@ export default function App() {
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead style={{ background: "#F9F9F9" }}>
                         <tr>
-                          {["Property","Description","Cost","Charge","Profit","Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
+                          {["Property","Description","Cost","Charge","Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -1387,10 +1386,7 @@ export default function App() {
                               <td style={td}><Tag label={e.property} color={propColor(e.property)} /></td>
                               <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                               <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
-                              <td style={{ ...td, color: "#16a34a" }}>{fmt(charge)}</td>
-                              <td style={{ ...td, fontWeight: 700, color: profit >= 0 ? "#16a34a" : "#dc2626" }}>
-                                {profit !== null ? fmt(profit) : "—"}
-                              </td>
+                              <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>
                               <td style={td}><Tag label={typeLabel} color={typeCol} /></td>
                               <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
@@ -1589,8 +1585,8 @@ export default function App() {
                       {[
                         { label: "Bookings",            value: dashFiltered.length,                                                          icon: "📋", color: "#0D0D0D" },
                         { label: "Commission Earnings", value: fmt(sum(dashFiltered,"cohostComm")),                                          icon: "📊", color: "#8b5cf6" },
-                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => { const parts=(e.date||"").split("/"); return (dashMonth==="All"||parts[1]===dashMonth)&&(dashYear==="All"||parts[2]===dashYear); }),"amount")),  icon: "🔧", color: "#f97316" },
-                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => { const parts=(e.date||"").split("/"); return (dashMonth==="All"||parts[1]===dashMonth)&&(dashYear==="All"||parts[2]===dashYear); }),"amount")), icon: "💰", color: "#db2777" },
+                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost")),  icon: "🔧", color: "#f97316" },
+                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost")), icon: "💰", color: "#db2777" },
                       ].map(k => (
                         <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
@@ -1653,8 +1649,8 @@ export default function App() {
                             <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                               <td colSpan={5} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                               <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(dashFiltered,"cohostComm"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost") + sum(dashByProp,"calloutEarnings") - sum(dashFiltered,"coHostCalloutCost"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashByProp,"calloutEarnings"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost"))}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1696,7 +1692,8 @@ export default function App() {
                         { label: "Total Gross",        value: fmt(sum(dashFiltered,"fullGross")),      icon: "💷", color: "#0D0D0D" },
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
                         { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit")), icon: "📈", color: "#16a34a" },
-                        { label: "Client Payouts",      value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed" },
+                        { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed" },
+                        { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316" },
                       ].map(k => (
                         <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
