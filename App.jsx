@@ -546,8 +546,8 @@ function CalcPreview({ form, isCohost }) {
   if (!prop) return null;
   const c    = calcBooking(form, PROPERTIES);
   const cohostBasisLabel = prop.model === "tiered"
-    ? `${(prop.cohost*100).toFixed(1)}% of (True Net − Biz Comm)`
-    : `${(prop.cohost*100).toFixed(1)}% of Booking Payout`;
+    ? `${+(prop.cohost*100).toFixed(1)}% of (True Net − Biz Comm)`
+    : `${+(prop.cohost*100).toFixed(1)}% of Booking Payout`;
   const plat = PLATFORMS[form.platform] || PLATFORMS["AirBNB"];
   const feeLabels = feeBasisLabels(plat);
   const rows = [
@@ -556,7 +556,7 @@ function CalcPreview({ form, isCohost }) {
     [feeLabels.host,   fmt(c.hostServiceFee),  "#fb923c", null],
     ["Booking Payout",            fmt(c.bookingPayout),   "#60a5fa", null],
     ["True Net",                  fmt(c.trueNet),         "#a78bfa", "trueNet"],
-    [`Business Comm ${(prop.sholom*100).toFixed(0)}% of True Net`, fmt(c.businessComm), "#4ade80", "businessComm"],
+    [`Business Comm ${+(prop.sholom*100).toFixed(0)}% of True Net`, fmt(c.businessComm), "#4ade80", "businessComm"],
     [`CoHost Comm — ${cohostBasisLabel}`, fmt(c.cohostComm), "#f472b6", null],
     ["Client Payout",              fmt(c.ownerPayout),     "#34d399", null],
     ["Business Profit",           fmt(c.businessProfit),  "#facc15", "businessProfit"],
@@ -742,8 +742,26 @@ export default function App() {
         const c = calcBooking(b, properties);
         const linked = expenses.filter(e => e.bookingId === b.id && e.expenseType);
         if (!linked.length) return c;
-        const bizCost   = sum(linked.filter(e => e.expenseType === "business"), "amount");
-        const ownerCost = sum(linked.filter(e => e.expenseType === "owner"),    "amount");
+        const bizCost        = sum(linked.filter(e => e.expenseType === "business"), "amount");
+        const ownerCost      = sum(linked.filter(e => e.expenseType === "owner"),    "amount");
+        // CoHost Callout expenses: cost adds to coHostCalloutCost, charge adds to coHostCalloutCharge
+        // then we re-run calcBooking with updated booking to get correct profit
+        const cohostCallouts = linked.filter(e => e.category === "CoHost Callout");
+        if (cohostCallouts.length) {
+          const extraCost   = sum(cohostCallouts, "amount");
+          const extraCharge = sum(cohostCallouts, "charge");
+          const updatedBooking = {
+            ...b,
+            coHostCalloutCost:   +(parseFloat(b.coHostCalloutCost||0)   + extraCost).toFixed(2),
+            coHostCalloutCharge: +(parseFloat(b.coHostCalloutCharge||0) + extraCharge).toFixed(2),
+          };
+          const recalc = calcBooking(updatedBooking, properties);
+          return {
+            ...recalc,
+            businessProfit: +(recalc.businessProfit - bizCost).toFixed(2),
+            ownerPayout:    +(recalc.ownerPayout    - ownerCost).toFixed(2),
+          };
+        }
         return {
           ...c,
           businessProfit: +(c.businessProfit - bizCost).toFixed(2),
@@ -1168,8 +1186,13 @@ export default function App() {
               <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999", boxShadow: "0 1px 3px rgba(0,0,0,0.07)" }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
                 <div style={{ fontWeight: 700, fontSize: 16, color: "#555555", marginBottom: 8 }}>No bookings yet</div>
-                <div style={{ fontSize: 13, marginBottom: 20 }}>Click "+ New Booking" to add your first AirBNB booking</div>
-                <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>
+                {!isClient && (
+                  <>
+                    <div style={{ fontSize: 13, marginBottom: 20 }}>Click "+ New Booking" to add your first AirBNB booking</div>
+                    <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>
+                  </>
+                )}
+                {isClient && <div style={{ fontSize: 13, color: "#999" }}>No bookings have been recorded for your property yet.</div>}
               </div>
             ) : isMobile ? (
               /* ── MOBILE: booking cards ── */
@@ -1586,7 +1609,7 @@ export default function App() {
                             </div>
                           </div>
                           <div style={{ marginTop: 10, fontSize: 11, color: "#999999" }}>
-                            {(PROPERTIES[p].cohost*100).toFixed(1)}% commission rate
+                            {+(PROPERTIES[p].cohost*100).toFixed(1)}% commission rate
                           </div>
                         </div>
                       ))}
@@ -1689,7 +1712,7 @@ export default function App() {
                             <div style={{ gridColumn: "1/-1" }}><div style={{ fontSize: 10, color: "#999999", marginBottom: 3 }}>CLIENT PAYOUT</div><div style={{ fontWeight: 700, color: "#7c3aed" }}>{fmt(owner)}</div></div>
                           </div>
                           <div style={{ marginTop: 10, fontSize: 11, color: "#999999" }}>
-                            {(PROPERTIES[p].sholom*100).toFixed(0)}% biz · {(PROPERTIES[p].cohost*100).toFixed(1)}% cohost · {PROPERTIES[p].cohostName} · {PROPERTIES[p].model}
+                            {+(PROPERTIES[p].sholom*100).toFixed(0)}% biz · {+(PROPERTIES[p].cohost*100).toFixed(1)}% cohost · {PROPERTIES[p].cohostName} · {PROPERTIES[p].model}
                           </div>
                         </div>
                       ))}
@@ -2099,7 +2122,7 @@ export default function App() {
                                 {prop.live ? "Set offline" : "Go live"}
                               </button>
                               <button onClick={() => {
-                                setPropertyForm({ name: p, sholom: (prop.sholom*100).toString(), cohost: (prop.cohost*100).toString(), cohostName: prop.cohostName, model: prop.model, live: prop.live });
+                                setPropertyForm({ name: p, sholom: (+(prop.sholom*100).toFixed(2)).toString(), cohost: (+(prop.cohost*100).toFixed(2)).toString(), cohostName: prop.cohostName, model: prop.model, live: prop.live });
                                 setEditPropertyName(p);
                                 setShowPropertyModal(true);
                               }} style={{ background: "#F0F0F0", color: "#1A1A1A", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
@@ -2110,12 +2133,12 @@ export default function App() {
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 10 }}>
                             <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "10px 12px" }}>
                               <div style={{ fontSize: 10, color: "#999", marginBottom: 3 }}>BIZ COMMISSION</div>
-                              <div style={{ fontWeight: 800, fontSize: 18, color: "#E61C5D" }}>{(prop.sholom*100).toFixed(0)}%</div>
+                              <div style={{ fontWeight: 800, fontSize: 18, color: "#E61C5D" }}>{+(prop.sholom*100).toFixed(0)}%</div>
                               <div style={{ fontSize: 11, color: "#bbb" }}>of True Net</div>
                             </div>
                             <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "10px 12px" }}>
                               <div style={{ fontSize: 10, color: "#999", marginBottom: 3 }}>COHOST COMMISSION</div>
-                              <div style={{ fontWeight: 800, fontSize: 18, color: "#0D0D0D" }}>{(prop.cohost*100).toFixed(1)}%</div>
+                              <div style={{ fontWeight: 800, fontSize: 18, color: "#0D0D0D" }}>{+(prop.cohost*100).toFixed(1)}%</div>
                               <div style={{ fontSize: 11, color: "#bbb" }}>{prop.model === "split" ? "of Booking Payout" : "of (True Net − Biz)"}</div>
                             </div>
                             <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "10px 12px" }}>
@@ -2619,14 +2642,27 @@ export default function App() {
                 )}
               </div>
 
-              {/* Business / Owner classification */}
-              <div style={{ fontSize: 12, color: "#666666", marginBottom: 12 }}>
-                Is this a <strong>business</strong> expense (charge reduces Business Profit) or a <strong>client</strong> expense (charge reduces Client Payout)?
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => resolveExpenseType(exp.id, "business")} style={btn("#8b5cf6", "#fff", false)}>Business Expense</button>
-                <button onClick={() => resolveExpenseType(exp.id, "owner")} style={btn("#0891b2", "#fff", false)}>Client Expense</button>
-              </div>
+              {/* Business / Owner / CoHost Callout classification */}
+              {exp.category === "CoHost Callout" ? (
+                <>
+                  <div style={{ background: "#fff7ed", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+                    This is a <strong>CoHost Callout</strong> — the cost will be added to the booking's callout cost, and the charge will be added to the callout charge. The difference (charge − cost) becomes business profit.
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => resolveExpenseType(exp.id, "cohost-callout")} style={btn("#f97316", "#fff", false)}>Confirm CoHost Callout</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: "#666666", marginBottom: 12 }}>
+                    Is this a <strong>business</strong> expense (reduces Business Profit) or a <strong>client</strong> expense (reduces Client Payout)?
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => resolveExpenseType(exp.id, "business")} style={btn("#8b5cf6", "#fff", false)}>Business Expense</button>
+                    <button onClick={() => resolveExpenseType(exp.id, "owner")} style={btn("#0891b2", "#fff", false)}>Client Expense</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         );
