@@ -742,8 +742,26 @@ export default function App() {
         const c = calcBooking(b, properties);
         const linked = expenses.filter(e => e.bookingId === b.id && e.expenseType);
         if (!linked.length) return c;
-        const bizCost   = sum(linked.filter(e => e.expenseType === "business"), "amount");
-        const ownerCost = sum(linked.filter(e => e.expenseType === "owner"),    "amount");
+        // Separate CoHost Callout expenses from regular business/owner expenses
+        const cohostCallouts = linked.filter(e => e.category === "CoHost Callout" || e.expenseType === "cohost-callout");
+        const regularLinked  = linked.filter(e => e.category !== "CoHost Callout" && e.expenseType !== "cohost-callout");
+        const bizCost        = sum(regularLinked.filter(e => e.expenseType === "business"), "amount");
+        const ownerCost      = sum(regularLinked.filter(e => e.expenseType === "owner"),    "amount");
+        if (cohostCallouts.length) {
+          const extraCost   = sum(cohostCallouts, "amount");
+          const extraCharge = sum(cohostCallouts, "charge");
+          const updatedBooking = {
+            ...b,
+            coHostCalloutCost:   +(parseFloat(b.coHostCalloutCost||0)   + extraCost).toFixed(2),
+            coHostCalloutCharge: +(parseFloat(b.coHostCalloutCharge||0) + extraCharge).toFixed(2),
+          };
+          const recalc = calcBooking(updatedBooking, properties);
+          return {
+            ...recalc,
+            businessProfit: +(recalc.businessProfit - bizCost).toFixed(2),
+            ownerPayout:    +(recalc.ownerPayout    - ownerCost).toFixed(2),
+          };
+        }
         return {
           ...c,
           businessProfit: +(c.businessProfit - bizCost).toFixed(2),
@@ -914,8 +932,9 @@ export default function App() {
       if (!expenseForm.bookingId) return;
       bookingId = expenseForm.bookingId;
     }
-    const expenseType = isCohost ? "" : expenseForm.expenseType;
-    const charge = isCohost ? null : (parseFloat(expenseForm.charge) || null);
+    // CoHost Callout category always uses "cohost-callout" type regardless of toggle
+    const expenseType = isCohost ? "" : (expenseForm.category === "CoHost Callout" ? "cohost-callout" : expenseForm.expenseType);
+    const charge = isCohost ? null : (parseFloat(expenseForm.charge) || parseFloat(expenseForm.amount) || null);
     const newExp = {
       id: `EXP${String(expenses.length + 1).padStart(4, "0")}`,
       property: expenseForm.property, description: expenseForm.description,
@@ -1346,28 +1365,34 @@ export default function App() {
               <>
                 <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginTop: 28, marginBottom: 14, fontSize: 15 }}>Recorded Expenses</h3>
                 <div style={{ fontSize: 12, color: "#999999", marginBottom: 12 }}>
-                  Business Expenses come out of the business's profit; Client Expenses come out of that property's client payout.
+                  Business Expenses reduce business profit · Client Expenses reduce that property's client payout · CoHost Callout: profit = charge − cost
                 </div>
                 <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead style={{ background: "#F9F9F9" }}>
                         <tr>
-                          {["Property","Description","Amount","Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
+                          {["Property","Description","Cost","Charge","Profit","Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {expenses.map(e => {
                           const b = bookings.find(bk => bk.id === e.bookingId);
+                          const charge = e.charge != null ? e.charge : e.amount;
+                          const profit = e.expenseType === "cohost-callout" ? +(charge - e.amount).toFixed(2) : null;
+                          const typeLabel = e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending";
+                          const typeCol   = e.expenseType === "business" ? "#8b5cf6" : e.expenseType === "owner" ? "#0891b2" : e.expenseType === "cohost-callout" ? "#f97316" : "#f59e0b";
                           return (
                             <tr key={e.id} style={{ background: "#FFFFFF" }}>
                               <td style={td}><Tag label={e.property} color={propColor(e.property)} /></td>
                               <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                               <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
-                              <td style={td}>
-                                <Tag label={e.type === "owner" ? "Client Expense" : "Business Expense"} color={e.type === "owner" ? "#0891b2" : "#8b5cf6"} />
+                              <td style={{ ...td, color: "#16a34a" }}>{fmt(charge)}</td>
+                              <td style={{ ...td, fontWeight: 700, color: profit >= 0 ? "#16a34a" : "#dc2626" }}>
+                                {profit !== null ? fmt(profit) : "—"}
                               </td>
-                              <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName}, ended ${b.endDate})` : e.bookingId}</td>
+                              <td style={td}><Tag label={typeLabel} color={typeCol} /></td>
+                              <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
                                 <button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
                               </td>
@@ -1709,7 +1734,7 @@ export default function App() {
         {/* EXPENSES TAB (Owner only) */}
         {tab === "expenses" && !isCohost && !isClient && (() => {
           const catColors  = { Maintenance: "#f97316", Callout: "#ef4444", Hamper: "#8b5cf6", Replenishables: "#0891b2", Other: "#64748b" };
-          const typeColor  = t => t === "business" ? "#8b5cf6" : t === "owner" ? "#0891b2" : "#f59e0b";
+          const typeColor  = t => t === "business" ? "#8b5cf6" : t === "owner" ? "#0891b2" : t === "cohost-callout" ? "#f97316" : "#f59e0b";
           const expYears   = [...new Set(expenses.map(e => (e.date||"").split("/")[2]).filter(Boolean))].sort();
           const MONTH_NAMES_EXP   = ["01","02","03","04","05","06","07","08","09","10","11","12"];
           const MONTH_LABELS_EXP  = { "01":"Jan","02":"Feb","03":"Mar","04":"Apr","05":"May","06":"Jun","07":"Jul","08":"Aug","09":"Sep","10":"Oct","11":"Nov","12":"Dec" };
@@ -1826,7 +1851,7 @@ export default function App() {
                                 <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                                 <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
                                 <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : "—"}</td>
-                                <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Owner" : "Pending"} color={typeColor(e.expenseType)} /></td>
+                                <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={typeColor(e.expenseType)} /></td>
                                 <td style={{ ...td, color: "#666666", fontSize: 12 }}>{bk ? `${bk.id} (${bk.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                                 <td style={td}><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></td>
                               </tr>
@@ -2486,7 +2511,12 @@ export default function App() {
                 <div><label style={lbl}>Category</label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {EXPENSE_CATEGORIES.map(c => (
-                      <button key={c} onClick={() => setExpenseForm(f => ({ ...f, category: c }))}
+                      <button key={c} onClick={() => setExpenseForm(f => ({ 
+                        ...f, 
+                        category: c,
+                        // Reset expenseType when switching away from CoHost Callout
+                        expenseType: c === "CoHost Callout" ? "cohost-callout" : (f.expenseType === "cohost-callout" ? "business" : f.expenseType)
+                      }))}
                         style={{ padding: "7px 14px", borderRadius: 8, border: expenseForm.category === c ? "2px solid #f97316" : "1.5px solid #E8E8E8", background: expenseForm.category === c ? "#fff7ed" : "#fff", color: expenseForm.category === c ? "#f97316" : "#1A1A1A", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                         {c}
                       </button>
@@ -2509,13 +2539,13 @@ export default function App() {
                   <input type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} style={inp} />
                 </div>
 
-                {/* Business / Owner type — Owner only */}
-                {!isCohost && (
+                {/* Business / Owner type — Owner only, hidden for CoHost Callout */}
+                {!isCohost && expenseForm.category !== "CoHost Callout" && (
                   <div>
                     <label style={lbl}>Expense Type</label>
                     <div style={{ display: "flex", gap: 8 }}>
                       {[{ key: "business", label: "Business Expense", color: "#8b5cf6" }, { key: "owner", label: "Client Expense", color: "#0891b2" }].map(t => (
-                        <button key={t.key} onClick={() => setExpenseForm(f => ({ ...f, expenseType: t.key }))}
+                        <button type="button" key={t.key} onClick={() => setExpenseForm(f => ({ ...f, expenseType: t.key }))}
                           style={{ flex: 1, padding: "10px", borderRadius: 8, border: expenseForm.expenseType === t.key ? `2px solid ${t.color}` : "1.5px solid #E8E8E8", background: expenseForm.expenseType === t.key ? `${t.color}18` : "#fff", color: expenseForm.expenseType === t.key ? t.color : "#1A1A1A", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                           {t.label}
                         </button>
@@ -2524,6 +2554,11 @@ export default function App() {
                     <div style={{ fontSize: 11, color: "#999999", marginTop: 4 }}>
                       {expenseForm.expenseType === "business" ? "Reduces Business Profit." : `Reduces ${expenseForm.property} Client Payout.`}
                     </div>
+                  </div>
+                )}
+                {!isCohost && expenseForm.category === "CoHost Callout" && (
+                  <div style={{ background: "#fff7ed", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400e" }}>
+                    🔧 <strong>CoHost Callout</strong> — cost reduces business profit, charge is billed to the client. Profit = charge − cost.
                   </div>
                 )}
                 {!isCohost && (
@@ -2624,14 +2659,27 @@ export default function App() {
                 )}
               </div>
 
-              {/* Business / Owner classification */}
-              <div style={{ fontSize: 12, color: "#666666", marginBottom: 12 }}>
-                Is this a <strong>business</strong> expense (charge reduces Business Profit) or a <strong>client</strong> expense (charge reduces Client Payout)?
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => resolveExpenseType(exp.id, "business")} style={btn("#8b5cf6", "#fff", false)}>Business Expense</button>
-                <button onClick={() => resolveExpenseType(exp.id, "owner")} style={btn("#0891b2", "#fff", false)}>Client Expense</button>
-              </div>
+              {/* Business / Owner / CoHost Callout classification */}
+              {exp.category === "CoHost Callout" ? (
+                <>
+                  <div style={{ background: "#fff7ed", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+                    This is a <strong>CoHost Callout</strong> — the cost will be added to the booking's callout cost, and the charge will be added to the callout charge. The difference (charge − cost) becomes business profit.
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => resolveExpenseType(exp.id, "cohost-callout")} style={btn("#f97316", "#fff", false)}>Confirm CoHost Callout</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: "#666666", marginBottom: 12 }}>
+                    Is this a <strong>business</strong> expense (reduces Business Profit) or a <strong>client</strong> expense (reduces Client Payout)?
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => resolveExpenseType(exp.id, "business")} style={btn("#8b5cf6", "#fff", false)}>Business Expense</button>
+                    <button onClick={() => resolveExpenseType(exp.id, "owner")} style={btn("#0891b2", "#fff", false)}>Client Expense</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         );
