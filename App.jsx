@@ -932,8 +932,9 @@ export default function App() {
       if (!expenseForm.bookingId) return;
       bookingId = expenseForm.bookingId;
     }
-    const expenseType = isCohost ? "" : expenseForm.expenseType;
-    const charge = isCohost ? null : (parseFloat(expenseForm.charge) || null);
+    // CoHost Callout category always uses "cohost-callout" type regardless of toggle
+    const expenseType = isCohost ? "" : (expenseForm.category === "CoHost Callout" ? "cohost-callout" : expenseForm.expenseType);
+    const charge = isCohost ? null : (parseFloat(expenseForm.charge) || parseFloat(expenseForm.amount) || null);
     const newExp = {
       id: `EXP${String(expenses.length + 1).padStart(4, "0")}`,
       property: expenseForm.property, description: expenseForm.description,
@@ -1727,7 +1728,7 @@ export default function App() {
         {/* EXPENSES TAB (Owner only) */}
         {tab === "expenses" && !isCohost && !isClient && (() => {
           const catColors  = { Maintenance: "#f97316", Callout: "#ef4444", Hamper: "#8b5cf6", Replenishables: "#0891b2", Other: "#64748b" };
-          const typeColor  = t => t === "business" ? "#8b5cf6" : t === "owner" ? "#0891b2" : "#f59e0b";
+          const typeColor  = t => t === "business" ? "#8b5cf6" : t === "owner" ? "#0891b2" : t === "cohost-callout" ? "#f97316" : "#f59e0b";
           const expYears   = [...new Set(expenses.map(e => (e.date||"").split("/")[2]).filter(Boolean))].sort();
           const MONTH_NAMES_EXP   = ["01","02","03","04","05","06","07","08","09","10","11","12"];
           const MONTH_LABELS_EXP  = { "01":"Jan","02":"Feb","03":"Mar","04":"Apr","05":"May","06":"Jun","07":"Jul","08":"Aug","09":"Sep","10":"Oct","11":"Nov","12":"Dec" };
@@ -1844,7 +1845,7 @@ export default function App() {
                                 <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                                 <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
                                 <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : "—"}</td>
-                                <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Owner" : "Pending"} color={typeColor(e.expenseType)} /></td>
+                                <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={typeColor(e.expenseType)} /></td>
                                 <td style={{ ...td, color: "#666666", fontSize: 12 }}>{bk ? `${bk.id} (${bk.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                                 <td style={td}><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></td>
                               </tr>
@@ -2527,8 +2528,8 @@ export default function App() {
                   <input type="number" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))} style={inp} />
                 </div>
 
-                {/* Business / Owner type — Owner only */}
-                {!isCohost && (
+                {/* Business / Owner type — Owner only, hidden for CoHost Callout */}
+                {!isCohost && expenseForm.category !== "CoHost Callout" && (
                   <div>
                     <label style={lbl}>Expense Type</label>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -2542,6 +2543,11 @@ export default function App() {
                     <div style={{ fontSize: 11, color: "#999999", marginTop: 4 }}>
                       {expenseForm.expenseType === "business" ? "Reduces Business Profit." : `Reduces ${expenseForm.property} Client Payout.`}
                     </div>
+                  </div>
+                )}
+                {!isCohost && expenseForm.category === "CoHost Callout" && (
+                  <div style={{ background: "#fff7ed", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400e" }}>
+                    🔧 <strong>CoHost Callout</strong> — cost reduces business profit, charge is billed to the client. Profit = charge − cost.
                   </div>
                 )}
                 {!isCohost && (
