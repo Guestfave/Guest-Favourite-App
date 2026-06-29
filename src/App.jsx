@@ -1268,7 +1268,7 @@ export default function App() {
                         {(isClient
                           ? ["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
                           : isCohost
-                            ? ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","CoHost Comm","Client Payout",""]
+                            ? ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","CoHost Comm","Callout","Client Payout",""]
                             : ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","True Net","Biz Comm","CoHost Comm","Client Payout","Biz Profit",""]
                         ).map(h => (
                           <th key={h} style={th}>{h}</th>
@@ -1309,6 +1309,7 @@ export default function App() {
                               {!isCohost && <td style={{ ...td, color: "#7c3aed" }}>{fmt(b.trueNet)}</td>}
                               {!isCohost && <td style={{ ...td, color: "#8b5cf6", fontWeight: 700 }}>{fmt(b.businessComm)}</td>}
                               <td style={{ ...td, color: "#db2777" }}>{fmt(b.cohostComm)}</td>
+                              {isCohost && <td style={{ ...td, color: "#f97316" }}>{(parseFloat(b.coHostCalloutCost)||0) > 0 ? fmt(b.coHostCalloutCost) : "—"}</td>}
                               <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(b.ownerPayout)}</td>
                               {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(b.businessProfit)}</td>}
                               <td style={{ ...td, whiteSpace: "nowrap" }}>
@@ -1348,6 +1349,7 @@ export default function App() {
                             {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#7c3aed" }}>{fmt(totals.trueNet)}</td>}
                             {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(filtered,"businessComm"))}</td>}
                             <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(filtered,"cohostComm"))}</td>
+                            {isCohost && <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(filtered,"coHostCalloutCost"))}</td>}
                             <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(totals.owner)}</td>
                             {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(totals.profit)}</td>}
                             <td />
@@ -1364,14 +1366,16 @@ export default function App() {
               <>
                 <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginTop: 28, marginBottom: 14, fontSize: 15 }}>Recorded Expenses</h3>
                 <div style={{ fontSize: 12, color: "#999999", marginBottom: 12 }}>
-                  Business Expenses reduce business profit · Client Expenses reduce that property's client payout · CoHost Callout: profit = charge − cost
+                  {isCohost
+                    ? "Your recorded expenses — cost is what you spent, type shows how it's classified."
+                    : "Business Expenses reduce business profit · Client Expenses reduce that property's client payout · CoHost Callout: profit = charge − cost"}
                 </div>
                 <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead style={{ background: "#F9F9F9" }}>
                         <tr>
-                          {["Property","Description","Cost","Charge","Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
+                          {["Property","Description","Cost",...(!isCohost ? ["Charge"] : []),"Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -1386,7 +1390,7 @@ export default function App() {
                               <td style={td}><Tag label={e.property} color={propColor(e.property)} /></td>
                               <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                               <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
-                              <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>
+                              {!isCohost && <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>}
                               <td style={td}><Tag label={typeLabel} color={typeCol} /></td>
                               <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
