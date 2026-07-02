@@ -856,38 +856,38 @@ export default function App() {
 
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
-    // calloutEarnings = coHostCalloutCost from bookings only (expenses already folded in via calc)
-    // We use the original booking coHostCalloutCost, not the recalculated one
-    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings: sum(rows, "coHostCalloutCost") };
-  }), [dashFiltered]);
+    // CoHost Callout earnings = cost from booking recalc + any free-standing callout expenses
+    const freeStandingCallouts = cohostCalloutExpenses
+      .filter(e => e.property === p && !e.bookingId);
+    const calloutEarnings = sum(rows, "coHostCalloutCost") + sum(freeStandingCallouts, "amount");
+    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings };
+  }), [dashFiltered, cohostCalloutExpenses]);
 
-  function DashFilterBar() {
-    return (
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={dashProp} onChange={e => setDashProp(e.target.value)}
-          style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
-          <option value="All">All Properties</option>
-          {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={dashMonth} onChange={e => setDashMonth(e.target.value)}
-          style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
-          <option value="All">All Months</option>
-          {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
-        </select>
-        <select value={dashYear} onChange={e => setDashYear(e.target.value)}
-          style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
-          <option value="All">All Years</option>
-          {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        {(dashProp !== "All" || dashMonth !== "All" || dashYear !== "All") && (
-          <button onClick={() => { setDashProp("All"); setDashMonth("All"); setDashYear("All"); }}
-            style={{ padding: "8px 12px", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#F7F7F7", color: "#666666", cursor: "pointer" }}>
-            Clear filters
-          </button>
-        )}
-      </div>
-    );
-  }
+  const dashFilterBar = (
+    <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+      <select value={dashProp} onChange={e => setDashProp(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Properties</option>
+        {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+      <select value={dashMonth} onChange={e => setDashMonth(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Months</option>
+        {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+      </select>
+      <select value={dashYear} onChange={e => setDashYear(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Years</option>
+        {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
+      </select>
+      {(dashProp !== "All" || dashMonth !== "All" || dashYear !== "All") && (
+        <button onClick={() => { setDashProp("All"); setDashMonth("All"); setDashYear("All"); }}
+          style={{ padding: "8px 12px", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#F7F7F7", color: "#666666", cursor: "pointer" }}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
 
   function openNew()   { setForm(EMPTY); setEditId(null); setShowForm(true); }
   function openEdit(b) { setForm({ ...b }); setEditId(b.id); setShowForm(true); }
@@ -1125,7 +1125,7 @@ export default function App() {
         </div>
       )}
 
-      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(14px, 4vw, 28px)" }}>
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(14px, 4vw, 28px)", position: "relative", zIndex: 1 }}>
 
         {/* BOOKINGS */}
         {tab === "bookings" && (
@@ -1577,7 +1577,7 @@ export default function App() {
               </div>
             ) : (
               <>
-                <DashFilterBar />
+                {dashFilterBar}
                 {dashFiltered.length === 0 ? (
                   <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                     <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
@@ -1589,8 +1589,8 @@ export default function App() {
                       {[
                         { label: "Bookings",            value: dashFiltered.length,                                                          icon: "📋", color: "#0D0D0D" },
                         { label: "Commission Earnings", value: fmt(sum(dashFiltered,"cohostComm")),                                          icon: "📊", color: "#8b5cf6" },
-                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost")),  icon: "🔧", color: "#f97316" },
-                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost")), icon: "💰", color: "#db2777" },
+                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount")),  icon: "🔧", color: "#f97316" },
+                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount")), icon: "💰", color: "#db2777" },
                       ].map(k => (
                         <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
@@ -1653,8 +1653,8 @@ export default function App() {
                             <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                               <td colSpan={5} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                               <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(dashFiltered,"cohostComm"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount"))}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1682,7 +1682,7 @@ export default function App() {
               </div>
             ) : (
               <>
-                <DashFilterBar />
+                {dashFilterBar}
                 {dashFiltered.length === 0 ? (
                   <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                     <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
@@ -2704,7 +2704,7 @@ export default function App() {
       )}
 
       {/* Bottom padding so content clears the mobile nav */}
-      {isMobile && <div style={{ height: 70 }} />}
+      {isMobile && <div style={{ height: 90 }} />}
     </div>
   );
 }
