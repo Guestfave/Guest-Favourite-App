@@ -628,6 +628,7 @@ export default function App() {
   const [propertyForm, setPropertyForm]           = useState({ name: "", sholom: "", cohost: "", cohostName: "", model: "tiered", live: false });
   const [impersonating, setImpersonating]         = useState(null);
   const [settingsTab, setSettingsTab]             = useState("users");
+  const [showCleaningBreakdown, setShowCleaningBreakdown] = useState(false);
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
@@ -746,7 +747,10 @@ export default function App() {
         const cohostCallouts = linked.filter(e => e.category === "CoHost Callout" || e.expenseType === "cohost-callout");
         const regularLinked  = linked.filter(e => e.category !== "CoHost Callout" && e.expenseType !== "cohost-callout");
         const bizCost        = sum(regularLinked.filter(e => e.expenseType === "business"), "amount");
-        const ownerCost      = sum(regularLinked.filter(e => e.expenseType === "owner"),    "amount");
+        const ownerExpenses  = regularLinked.filter(e => e.expenseType === "owner");
+        const ownerCost      = sum(ownerExpenses, "amount");
+        // Charge markup on client expenses = extra business profit (charge - cost)
+        const ownerMarkup    = sum(ownerExpenses, "charge") - ownerCost; // positive if charge > cost
         if (cohostCallouts.length) {
           const extraCost   = sum(cohostCallouts, "amount");
           const extraCharge = sum(cohostCallouts, "charge");
@@ -758,14 +762,14 @@ export default function App() {
           const recalc = calcBooking(updatedBooking, properties);
           return {
             ...recalc,
-            businessProfit: +(recalc.businessProfit - bizCost).toFixed(2),
-            ownerPayout:    +(recalc.ownerPayout    - ownerCost).toFixed(2),
+            businessProfit: +(recalc.businessProfit - bizCost + ownerMarkup).toFixed(2),
+            ownerPayout:    +(recalc.ownerPayout    - sum(ownerExpenses,"charge")).toFixed(2),
           };
         }
         return {
           ...c,
-          businessProfit: +(c.businessProfit - bizCost).toFixed(2),
-          ownerPayout:    +(c.ownerPayout    - ownerCost).toFixed(2),
+          businessProfit: +(c.businessProfit - bizCost + ownerMarkup).toFixed(2),
+          ownerPayout:    +(c.ownerPayout    - sum(ownerExpenses,"charge")).toFixed(2),
         };
       } catch(err) {
         console.error("calcBooking error for booking", b.id, err);
@@ -1422,7 +1426,7 @@ export default function App() {
                 && (cdYear  === "All" || parts[2] === cdYear);
           });
           const clientExpenses = expenses.filter(e =>
-            e.property === clientProperty && e.expenseType === "owner" && e.charge != null
+            e.property === activeProperty && e.expenseType === "owner" && e.charge != null
           ).filter(e => {
             const parts = (e.date||"").split("/");
             return (cdMonth === "All" || parts[1] === cdMonth)
@@ -1432,7 +1436,7 @@ export default function App() {
           const hasFilters = cdMonth !== "All" || cdYear !== "All";
           return (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>My Earnings — {clientProperty}</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>My Earnings — {activeProperty}</h2>
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -1455,7 +1459,7 @@ export default function App() {
               {clientCalc.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                   <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "#555555" }}>No bookings recorded yet for {clientProperty}</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#555555" }}>No bookings recorded yet for {activeProperty}</div>
                 </div>
               ) : cdFiltered.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
@@ -1698,14 +1702,52 @@ export default function App() {
                         { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit")), icon: "📈", color: "#16a34a" },
                         { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed" },
                         { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316" },
+                        { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: true },
                       ].map(k => (
-                        <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
+                        <div key={k.label}
+                          onClick={k.clickable ? () => setShowCleaningBreakdown(v => !v) : undefined}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? "1.5px solid #0891b2" : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}{k.clickable && <span style={{ marginLeft: 6, fontSize: 10, color: "#0891b2" }}>{showCleaningBreakdown ? "▲ Hide" : "▼ Show"}</span>}</div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Cleaning & Laundry breakdown panel */}
+                    {showCleaningBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #0891b2", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#0891b2", marginBottom: 14 }}>🧹 Cleaning & Laundry Breakdown</div>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>
+                              {["Booking ID","Property","Guest","Dates","Cleaning Fee","Laundry","Total"].map(h => <th key={h} style={th}>{h}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashFiltered.filter(b => (parseFloat(b.cleaningFee)||0) + (parseFloat(b.laundryFees)||0) > 0).map(b => (
+                              <tr key={b.id}>
+                                <td style={{ ...td, color: "#999", fontSize: 11, fontWeight: 700 }}>{b.id}</td>
+                                <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
+                                <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
+                                <td style={{ ...td, fontSize: 12, color: "#666" }}>{b.startDate} → {b.endDate}</td>
+                                <td style={{ ...td, color: "#0891b2" }}>{fmt(b.cleaningFee)}</td>
+                                <td style={{ ...td, color: "#0891b2" }}>{(parseFloat(b.laundryFees)||0) > 0 ? fmt(b.laundryFees) : "—"}</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt((parseFloat(b.cleaningFee)||0) + (parseFloat(b.laundryFees)||0))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt(sum(dashFiltered,"cleaningFee"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt(sum(dashFiltered,"laundryFees"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
                     <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>By Property</h3>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14 }}>
                       {dashByProp.filter(p => p.count > 0).map(({ p, count, gross, profit, owner }) => (
@@ -1881,7 +1923,7 @@ export default function App() {
           const catColors = { Maintenance:"#f97316", Callout:"#ef4444", Hamper:"#8b5cf6", Replenishables:"#0891b2", Other:"#64748b" };
           // All expenses charged to this client (owner-typed, charge set)
           const allClientExp = expenses.filter(e =>
-            e.property === clientProperty && e.expenseType === "owner" && e.charge != null
+            e.property === activeProperty && e.expenseType === "owner" && e.charge != null
           );
           const expYearsC = [...new Set(allClientExp.map(e => (e.date||"").split("/")[2]).filter(Boolean))].sort();
           const [ceCat,   setCeCat]   = [expFilterCat,   setExpFilterCat];
@@ -1897,7 +1939,7 @@ export default function App() {
           const selSty = { padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" };
           return (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Expenses — {clientProperty}</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Expenses — {activeProperty}</h2>
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -1924,7 +1966,7 @@ export default function App() {
               {allClientExp.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                   <div style={{ fontSize: 32, marginBottom: 10 }}>💸</div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: "#555555" }}>No expenses charged to {clientProperty} yet</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#555555" }}>No expenses charged to {activeProperty} yet</div>
                 </div>
               ) : ceFiltered.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
