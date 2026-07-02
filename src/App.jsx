@@ -834,6 +834,15 @@ export default function App() {
     trueNet: sum(filtered, "trueNet"),
   }), [filtered]);
 
+  // Free-standing expenses (no booking link) profit = charge - cost for client/cohost-callout types
+  const freeStandingProfit = useMemo(() =>
+    expenses.filter(e => !e.bookingId && e.expenseType && e.expenseType !== "business").reduce((acc, e) => {
+      const charge = e.charge != null ? +e.charge : +e.amount;
+      const cost   = +e.amount;
+      return acc + (charge - cost);
+    }, 0)
+  , [expenses]);
+
   // ── Dashboard filter options & filtered dataset (month/year/property) ──
   const MONTH_NAMES = ["01","02","03","04","05","06","07","08","09","10","11","12"];
   const MONTH_LABELS = { "01":"Jan","02":"Feb","03":"Mar","04":"Apr","05":"May","06":"Jun","07":"Jul","08":"Aug","09":"Sep","10":"Oct","11":"Nov","12":"Dec" };
@@ -860,12 +869,15 @@ export default function App() {
 
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
-    // CoHost Callout earnings = cost from booking recalc + any free-standing callout expenses
     const freeStandingCallouts = cohostCalloutExpenses
       .filter(e => e.property === p && !e.bookingId);
     const calloutEarnings = sum(rows, "coHostCalloutCost") + sum(freeStandingCallouts, "amount");
-    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings };
-  }), [dashFiltered, cohostCalloutExpenses]);
+    // Free-standing client expenses profit per property
+    const freeStandingExpProfit = expenses
+      .filter(e => e.property === p && !e.bookingId && e.expenseType && e.expenseType !== "business")
+      .reduce((acc, e) => acc + ((e.charge != null ? +e.charge : +e.amount) - +e.amount), 0);
+    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit") + freeStandingExpProfit, owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings };
+  }), [dashFiltered, cohostCalloutExpenses, expenses]);
 
   const dashFilterBar = (
     <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -1153,7 +1165,7 @@ export default function App() {
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 12, color: "#666", flex: 1 }}>
                     {filtered.length} bookings
-                    {!isCohost && !isClient && <><br/><strong style={{ color: "#16a34a" }}>{fmt(totals.profit)}</strong> profit</>}
+                    {!isCohost && !isClient && <><br/><strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong> profit</>}
                   </span>
                   {!isClient && (
                     <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }}
@@ -1179,7 +1191,7 @@ export default function App() {
                   {PROPERTY_NAMES.map(p => <option key={p}>{p}{!PROPERTIES[p].live ? " (not live)" : ""}</option>)}
                 </select>}
                 <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
-                  <span style={{ fontSize: 13, color: "#666666" }}>{filtered.length} bookings{!isCohost && !isClient && <> · Profit: <strong style={{ color: "#16a34a" }}>{fmt(totals.profit)}</strong></>}</span>
+                  <span style={{ fontSize: 13, color: "#666666" }}>{filtered.length} bookings{!isCohost && !isClient && <> · Profit: <strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong></>}</span>
                   {!isClient && <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
                   {!isClient && <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>}
                 </div>
@@ -1355,7 +1367,7 @@ export default function App() {
                             <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(filtered,"cohostComm"))}</td>
                             {isCohost && <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(filtered,"coHostCalloutCost"))}</td>}
                             <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(totals.owner)}</td>
-                            {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(totals.profit)}</td>}
+                            {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</td>}
                             <td />
                           </>
                         )}
@@ -1699,7 +1711,7 @@ export default function App() {
                         { label: "Bookings",          value: dashFiltered.length,                     icon: "📋", color: "#0D0D0D" },
                         { label: "Total Gross",        value: fmt(sum(dashFiltered,"fullGross")),      icon: "💷", color: "#0D0D0D" },
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
-                        { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit")), icon: "📈", color: "#16a34a" },
+                        { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a" },
                         { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed" },
                         { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316" },
                         { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: true },
