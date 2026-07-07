@@ -248,7 +248,11 @@ function calcBooking(b, propertiesMap) {
 
 const fmt    = n => `£${Number(n || 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const sum    = (arr, key) => arr.reduce((a, b) => a + (b[key] || 0), 0);
-const nextId = bs => `CC${String(bs.length + 1).padStart(5, "0")}`;
+// Timestamp-based IDs — collision-proof even when users only see a subset of records
+const nextId = () => {
+  const d = new Date();
+  return `CC${d.getFullYear().toString().slice(2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}${String(d.getSeconds()).padStart(2,"0")}`;
+};
 // Parse a "DD/MM/YYYY" date string into a sortable number (YYYYMMDD). Invalid/empty -> 0.
 const parseDMY = (s) => {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((s || "").trim());
@@ -629,6 +633,9 @@ export default function App() {
   const [impersonating, setImpersonating]         = useState(null);
   const [settingsTab, setSettingsTab]             = useState("users");
   const [showCleaningBreakdown, setShowCleaningBreakdown] = useState(false);
+  const [showClientPayoutBreakdown, setShowClientPayoutBreakdown] = useState(false);
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [statementForm, setStatementForm] = useState({ property: "CH", month: "All", year: "All" });
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
@@ -687,7 +694,7 @@ export default function App() {
   async function loadBookings(prof) {
     const p = prof || profile;
     if (!p) return;
-    let q = sb.from("bookings").select("*").order("created_at", { ascending: false });
+    let q = sb.from("bookings").select("*").eq("deleted", false).order("created_at", { ascending: false });
     if ((p.role==="cohost"||p.role==="client") && p.properties?.length) q = q.in("property", p.properties);
     const { data, error } = await q;
     if (error) { setDbError(error.message); return; }
@@ -696,7 +703,7 @@ export default function App() {
   async function loadExpenses(prof) {
     const p = prof || profile;
     if (!p) return;
-    let q = sb.from("expenses").select("*").order("created_at", { ascending: false });
+    let q = sb.from("expenses").select("*").eq("deleted", false).order("created_at", { ascending: false });
     if ((p.role==="cohost"||p.role==="client") && p.properties?.length) q = q.in("property", p.properties);
     const { data, error } = await q;
     if (error) { setDbError(error.message); return; }
@@ -816,15 +823,17 @@ export default function App() {
 
   const filtered = useMemo(() => {
     let base = isClient ? clientCalc : calc;
-    if (isCohost && impersonating?.cohostProperties) {
-      base = base.filter(b => impersonating.cohostProperties.includes(b.property));
+    // For real cohost login, filter to their assigned properties
+    if (isCohost) {
+      const cohostProps = impersonating?.cohostProperties || profile?.properties || [];
+      if (cohostProps.length) base = base.filter(b => cohostProps.includes(b.property));
     }
     return base.filter(b => {
       const propOk   = filterProp === "All" || b.property === filterProp;
       const searchOk = !search || b.guestName.toLowerCase().includes(search.toLowerCase()) || (b.bookingId || "").toLowerCase().includes(search.toLowerCase());
       return propOk && searchOk;
     });
-  }, [calc, clientCalc, isClient, isCohost, impersonating, filterProp, search]);
+  }, [calc, clientCalc, isClient, isCohost, impersonating, profile, filterProp, search]);
 
   const totals = useMemo(() => ({
     gross:   sum(filtered, "fullGross"),
@@ -915,7 +924,7 @@ export default function App() {
       const { error } = await sb.from("bookings").update(bookingToDb({ ...form, id: editId })).eq("id", editId);
       if (error) { setDbError(error.message); return; }
     } else {
-      const newId = nextId(bookings);
+      const newId = nextId();
       const { error } = await sb.from("bookings").insert(bookingToDb({ ...form, id: newId }));
       if (error) { setDbError(error.message); return; }
     }
@@ -923,9 +932,15 @@ export default function App() {
   }
 
   async function del(id) {
-    if (!confirm("Delete this booking?")) return;
-    const { error } = await sb.from("bookings").delete().eq("id", id);
+    if (!confirm("Archive this booking? You can restore it from Settings → Archive.")) return;
+    const { error } = await sb.from("bookings").update({ deleted: true }).eq("id", id);
     if (error) setDbError(error.message);
+  }
+
+  async function restoreBooking(id) {
+    const { error } = await sb.from("bookings").update({ deleted: false }).eq("id", id);
+    if (error) setDbError(error.message);
+    loadArchived();
   }
 
   // Find the booking with the latest End Date for a given property
@@ -951,7 +966,7 @@ export default function App() {
     const expenseType = isCohost ? "" : (expenseForm.category === "CoHost Callout" ? "cohost-callout" : expenseForm.expenseType);
     const charge = isCohost ? null : (parseFloat(expenseForm.charge) || parseFloat(expenseForm.amount) || null);
     const newExp = {
-      id: `EXP${String(expenses.length + 1).padStart(4, "0")}`,
+      id: `EXP${Date.now().toString(36).toUpperCase()}`,
       property: expenseForm.property, description: expenseForm.description,
       amount: amt, charge, category: expenseForm.category,
       date: expenseForm.date || (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; })(),
@@ -964,9 +979,131 @@ export default function App() {
   }
 
   async function deleteExpense(id) {
-    const { error } = await sb.from("expenses").delete().eq("id", id);
+    if (!confirm("Archive this expense? You can restore it from Settings → Archive.")) return;
+    const { error } = await sb.from("expenses").update({ deleted: true }).eq("id", id);
     if (error) setDbError(error.message);
   }
+
+  async function restoreExpense(id) {
+    const { error } = await sb.from("expenses").update({ deleted: false }).eq("id", id);
+    if (error) setDbError(error.message);
+    loadArchived();
+  }
+
+  // Archived records (owner only)
+  const [archivedBookings, setArchivedBookings] = useState([]);
+  const [archivedExpenses, setArchivedExpenses] = useState([]);
+  async function loadArchived() {
+    const { data: ab } = await sb.from("bookings").select("*").eq("deleted", true).order("created_at", { ascending: false });
+    const { data: ae } = await sb.from("expenses").select("*").eq("deleted", true).order("created_at", { ascending: false });
+    setArchivedBookings((ab || []).map(dbToBooking));
+    setArchivedExpenses((ae || []).map(dbToExpense));
+  }
+
+  // ── CSV EXPORT ───────────────────────────────────────────────────────────────
+  function downloadCSV(filename, rows) {
+    if (!rows.length) { alert("Nothing to export."); return; }
+    const headers = Object.keys(rows[0]);
+    const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [headers.join(","), ...rows.map(r => headers.map(h => esc(r[h])).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function exportBookingsCSV() {
+    downloadCSV(`guestfavourite-bookings-${new Date().toISOString().slice(0,10)}.csv`,
+      calc.map(b => ({
+        ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
+        BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
+        FullGross: b.fullGross, Base: b.base, GuestFee: b.guestServiceFee, HostFee: b.hostServiceFee,
+        BookingPayout: b.bookingPayout, CleaningFee: b.cleaningFee, Laundry: b.laundryFees,
+        TrueNet: b.trueNet, BizComm: b.businessComm, CoHostComm: b.cohostComm,
+        ClientPayout: b.ownerPayout, BizProfit: b.businessProfit,
+      })));
+  }
+  function exportExpensesCSV() {
+    downloadCSV(`guestfavourite-expenses-${new Date().toISOString().slice(0,10)}.csv`,
+      expenses.map(e => ({
+        ID: e.id, Property: e.property, Description: e.description, Category: e.category,
+        Cost: e.amount, Charge: e.charge ?? e.amount, Type: e.expenseType || "pending",
+        Date: e.date, LinkedBooking: e.bookingId || "free-standing",
+      })));
+  }
+
+  // ── CLIENT STATEMENT (printable, save as PDF via browser) ────────────────────
+  function generateStatement(property, month, year) {
+    const rows = calc.filter(b => {
+      if (b.property !== property) return false;
+      const parts = (b.startDate || "").split("/");
+      if (month !== "All" && parts[1] !== month) return false;
+      if (year !== "All" && parts[2] !== year) return false;
+      return true;
+    });
+    const propExpenses = expenses.filter(e => {
+      if (e.property !== property || e.expenseType !== "owner") return false;
+      const parts = (e.date || "").split("/");
+      if (month !== "All" && parts[1] !== month) return false;
+      if (year !== "All" && parts[2] !== year) return false;
+      return true;
+    });
+    const clientUser = users.find(u => u.role === "client" && u.properties?.includes(property));
+    const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}`.trim();
+    const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
+    const totExpCharge = propExpenses.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
+    const rowsHtml = rows.map(b => `
+      <tr>
+        <td>${b.id}</td><td>${b.platform}</td><td>${b.guestName}</td>
+        <td>${b.startDate} → ${b.endDate}</td>
+        <td class="num">£${(+b.fullGross).toFixed(2)}</td>
+        <td class="num">£${(+b.fullGross - +b.ownerPayout).toFixed(2)}</td>
+        <td class="num strong">£${(+b.ownerPayout).toFixed(2)}</td>
+      </tr>`).join("");
+    const expHtml = propExpenses.length ? `
+      <h3>Expenses charged this period</h3>
+      <table><thead><tr><th>Description</th><th>Category</th><th>Date</th><th class="num">Amount</th></tr></thead>
+      <tbody>${propExpenses.map(e => `<tr><td>${e.description}</td><td>${e.category}</td><td>${e.date}</td><td class="num">£${(e.charge != null ? +e.charge : +e.amount).toFixed(2)}</td></tr>`).join("")}</tbody></table>` : "";
+    const w = window.open("", "_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${property} — ${periodLabel}</title>
+      <style>
+        body { font-family: 'Barlow', -apple-system, sans-serif; color: #0D0D0D; padding: 40px; max-width: 800px; margin: 0 auto; }
+        .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #E61C5D; padding-bottom: 16px; margin-bottom: 24px; }
+        .brand { font-weight: 900; font-size: 26px; letter-spacing: -0.5px; }
+        .brand .dot { color: #E61C5D; }
+        h2 { font-size: 18px; margin: 4px 0; } h3 { font-size: 14px; margin: 24px 0 8px; }
+        .meta { color: #666; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+        th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #999; padding: 8px; border-bottom: 2px solid #eee; }
+        td { padding: 8px; border-bottom: 1px solid #f3f3f3; }
+        .num { text-align: right; } .strong { font-weight: 700; }
+        .totals { margin-top: 24px; background: #fafafa; border-radius: 10px; padding: 16px 20px; }
+        .totals div { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+        .totals .final { font-weight: 800; font-size: 18px; color: #E61C5D; border-top: 2px solid #eee; padding-top: 8px; margin-top: 8px; }
+        .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; }
+        @media print { body { padding: 20px; } }
+      </style></head><body>
+      <div class="head">
+        <div><div class="brand">GuestFavour<span class="dot">i</span>te</div><div class="meta">Property Management</div></div>
+        <div style="text-align:right"><h2>Client Statement</h2><div class="meta">${property} · ${periodLabel}</div>
+        ${clientUser ? `<div class="meta">${clientUser.name}</div>` : ""}</div>
+      </div>
+      <table><thead><tr><th>ID</th><th>Platform</th><th>Guest</th><th>Dates</th><th class="num">Gross</th><th class="num">Total Fees</th><th class="num">Your Payout</th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="7" style="text-align:center;color:#999">No bookings this period</td></tr>'}</tbody></table>
+      ${expHtml}
+      <div class="totals">
+        <div><span>Total Gross</span><span>£${totGross.toFixed(2)}</span></div>
+        <div><span>Total Booking Payout</span><span>£${totPayout.toFixed(2)}</span></div>
+        ${totExpCharge ? `<div><span>Expenses Charged</span><span>−£${totExpCharge.toFixed(2)}</span></div>` : ""}
+        <div class="final"><span>Net Payout</span><span>£${(totPayout - totExpCharge).toFixed(2)}</span></div>
+      </div>
+      <div class="footer">Generated ${new Date().toLocaleDateString("en-GB")} · GuestFavourite · guestfavourite.co.uk</div>
+      <script>window.print()</script></body></html>`);
+    w.document.close();
+  }
+
+
 
   function resolveIssue(issue) {
     if (issue.type === "expense") { setResolveExpenseId(issue.expense.id); setResolveChargeInput(""); }
@@ -1188,10 +1325,16 @@ export default function App() {
                 {!isClient && <select value={filterProp} onChange={e => setFilterProp(e.target.value)}
                   style={{ padding: "9px 14px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
                   <option value="All">All Properties</option>
-                  {PROPERTY_NAMES.map(p => <option key={p}>{p}{!PROPERTIES[p].live ? " (not live)" : ""}</option>)}
+                  {(isCohost ? (impersonating?.cohostProperties || profile?.properties || PROPERTY_NAMES) : PROPERTY_NAMES).map(p => <option key={p}>{p}{!PROPERTIES[p]?.live ? " (not live)" : ""}</option>)}
                 </select>}
-                <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 13, color: "#666666" }}>{filtered.length} bookings{!isCohost && !isClient && <> · Profit: <strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong></>}</span>
+                  {!isCohost && !isClient && (
+                    <>
+                      <button onClick={() => setShowStatementModal(true)} style={{ ...btn("#7c3aed", "#fff", false), padding: "10px 14px" }}>📄 Statement</button>
+                      <button onClick={exportBookingsCSV} style={{ ...btn("#0D0D0D", "#fff", false), padding: "10px 14px" }}>⬇ CSV</button>
+                    </>
+                  )}
                   {!isClient && <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
                   {!isClient && <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>}
                 </div>
@@ -1712,19 +1855,60 @@ export default function App() {
                         { label: "Total Gross",        value: fmt(sum(dashFiltered,"fullGross")),      icon: "💷", color: "#0D0D0D" },
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
                         { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a" },
-                        { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed" },
+                        { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed", clickable: "client" },
                         { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316" },
-                        { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: true },
+                        { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: "cleaning" },
                       ].map(k => (
                         <div key={k.label}
-                          onClick={k.clickable ? () => setShowCleaningBreakdown(v => !v) : undefined}
-                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? "1.5px solid #0891b2" : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
+                          onClick={k.clickable === "cleaning" ? () => setShowCleaningBreakdown(v => !v) : k.clickable === "client" ? () => setShowClientPayoutBreakdown(v => !v) : undefined}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}{k.clickable && <span style={{ marginLeft: 6, fontSize: 10, color: "#0891b2" }}>{showCleaningBreakdown ? "▲ Hide" : "▼ Show"}</span>}</div>
+                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                            {k.label}
+                            {k.clickable === "cleaning" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showCleaningBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "client" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showClientPayoutBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                          </div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Client Payout breakdown panel */}
+                    {showClientPayoutBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #7c3aed", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#7c3aed", marginBottom: 14 }}>🏠 Client Payout Breakdown</div>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>
+                              {["Property","Client","Bookings","Total Gross","Total Payout"].map(h => <th key={h} style={th}>{h}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {PROPERTY_NAMES.map(p => {
+                              const propRows = dashFiltered.filter(b => b.property === p);
+                              if (!propRows.length) return null;
+                              const clientUser = users.find(u => u.role === "client" && u.properties?.includes(p));
+                              return (
+                                <tr key={p}>
+                                  <td style={td}><Tag label={p} color={propColor(p)} /></td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{clientUser?.name || "—"}</td>
+                                  <td style={td}>{propRows.length}</td>
+                                  <td style={{ ...td, fontWeight: 700 }}>{fmt(sum(propRows,"fullGross"))}</td>
+                                  <td style={{ ...td, fontWeight: 700, color: "#7c3aed" }}>{fmt(sum(propRows,"ownerPayout"))}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={3} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700 }}>{fmt(sum(dashFiltered,"fullGross"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#7c3aed" }}>{fmt(sum(dashFiltered,"ownerPayout"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
 
                     {/* Cleaning & Laundry breakdown panel */}
                     {showCleaningBreakdown && (
@@ -1808,7 +1992,10 @@ export default function App() {
           const selSty  = { padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF", cursor: "pointer" };
           return (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Expenses</h2>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", margin: 0 }}>Expenses</h2>
+                <button onClick={exportExpensesCSV} style={{ background: "#0D0D0D", color: "#fff", border: "none", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>⬇ Export CSV</button>
+              </div>
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -2054,7 +2241,7 @@ export default function App() {
         {tab === "settings" && !isCohost && !isClient && (() => {
           const roleColor = { owner: "#E61C5D", cohost: "#0D0D0D", client: "#0891b2" };
           const roleLabel = { owner: "Owner", cohost: "CoHost", client: "Client" };
-          const settingsTabs = ["users", "properties", "platforms"];
+          const settingsTabs = ["users", "properties", "platforms", "archive"];
           const lbl = { fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 };
           const inp = { width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "'Barlow', sans-serif" };
 
@@ -2333,6 +2520,51 @@ export default function App() {
                   </div>
                 </>
               )}
+
+              {/* ── ARCHIVE ── */}
+              {settingsTab === "archive" && (() => {
+                // Load archived on first open
+                if (!archivedBookings.length && !archivedExpenses.length) loadArchived();
+                return (
+                  <>
+                    <div style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
+                      Archived bookings and expenses. Restore anything deleted by mistake — restored records reappear everywhere instantly.
+                      <button onClick={loadArchived} style={{ marginLeft: 10, background: "#F0F0F0", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>↻ Refresh</button>
+                    </div>
+                    <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Archived Bookings ({archivedBookings.length})</h3>
+                    {archivedBookings.length === 0 ? (
+                      <div style={{ fontSize: 13, color: "#999", marginBottom: 20 }}>Nothing archived.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+                        {archivedBookings.map(b => (
+                          <div key={b.id} style={{ background: "#FFFFFF", borderRadius: 10, border: "1px solid #F0F0F0", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                            <Tag label={b.property} color={propColor(b.property)} />
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{b.guestName}</span>
+                            <span style={{ fontSize: 12, color: "#999" }}>{b.startDate} → {b.endDate} · {fmt(b.fullGross)}</span>
+                            <span style={{ fontSize: 11, color: "#bbb" }}>{b.id}</span>
+                            <button onClick={() => restoreBooking(b.id)} style={{ marginLeft: "auto", background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>↩ Restore</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Archived Expenses ({archivedExpenses.length})</h3>
+                    {archivedExpenses.length === 0 ? (
+                      <div style={{ fontSize: 13, color: "#999" }}>Nothing archived.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {archivedExpenses.map(e => (
+                          <div key={e.id} style={{ background: "#FFFFFF", borderRadius: 10, border: "1px solid #F0F0F0", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                            <Tag label={e.property} color={propColor(e.property)} />
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{e.description}</span>
+                            <span style={{ fontSize: 12, color: "#999" }}>{fmt(e.amount)} · {e.category}</span>
+                            <button onClick={() => restoreExpense(e.id)} style={{ marginLeft: "auto", background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>↩ Restore</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Add/Edit User Modal */}
               {showUserModal && (
@@ -2739,6 +2971,50 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* STATEMENT GENERATOR MODAL */}
+      {showStatementModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <div style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 420 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>📄 Generate Client Statement</div>
+              <button onClick={() => setShowStatementModal(false)} style={{ background: "#F0F0F0", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Property</label>
+                <select value={statementForm.property} onChange={e => setStatementForm(f => ({ ...f, property: e.target.value }))}
+                  style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                  {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Month</label>
+                  <select value={statementForm.month} onChange={e => setStatementForm(f => ({ ...f, month: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Months</option>
+                    {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Year</label>
+                  <select value={statementForm.year} onChange={e => setStatementForm(f => ({ ...f, year: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Years</option>
+                    {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#999" }}>Opens a print-ready statement in a new tab — use your browser's print dialog to save it as a PDF and email it to the client.</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button onClick={() => setShowStatementModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
+              <button onClick={() => { generateStatement(statementForm.property, statementForm.month, statementForm.year); setShowStatementModal(false); }} style={btn("#7c3aed", "#fff", false)}>Generate Statement</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MOBILE BOTTOM NAV */}
       {isMobile && (
