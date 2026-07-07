@@ -615,7 +615,7 @@ export default function App() {
   const [dashMonth, setDashMonth] = useState("All");
   const [dashYear, setDashYear]   = useState("All");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "" });
+  const [expenseForm, setExpenseForm] = useState({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   const [showIssues, setShowIssues] = useState(true);
   const [resolveExpenseId, setResolveExpenseId] = useState(null);
   const [resolveChargeInput, setResolveChargeInput] = useState("");
@@ -678,10 +678,10 @@ export default function App() {
     return { id: b.id, property: b.property, platform: b.platform, guest_name: b.guestName, booking_ref: b.bookingId||"", start_date: b.startDate||"", end_date: b.endDate||"", full_gross: +b.fullGross||0, cleaning_fee: +b.cleaningFee||0, laundry_fees: +b.laundryFees||0, mistakes: +b.mistakes||0, spa_fee_cost: +b.spaFeeCost||0, spa_fee_charge: +b.spaFeeCharge||0, co_host_callout_cost: +b.coHostCalloutCost||0, co_host_callout_charge: +b.coHostCalloutCharge||0, updated_at: new Date().toISOString() };
   }
   function dbToExpense(r) {
-    return { id: r.id, property: r.property, description: r.description, amount: +r.amount, charge: r.charge!=null?+r.charge:null, category: r.category, expenseType: r.expense_type||"", bookingId: r.booking_id, date: r.expense_date, resolved: r.resolved };
+    return { id: r.id, property: r.property, description: r.description, amount: +r.amount, charge: r.charge!=null?+r.charge:null, category: r.category, expenseType: r.expense_type||"", bookingId: r.booking_id, date: r.expense_date, resolved: r.resolved, contractor: r.contractor||"" };
   }
   function expenseToDb(e) {
-    return { id: e.id, property: e.property, description: e.description, amount: e.amount, charge: e.charge, category: e.category, expense_type: e.expenseType||"", booking_id: e.bookingId||null, expense_date: e.date||"", resolved: e.resolved||false };
+    return { id: e.id, property: e.property, description: e.description, amount: e.amount, charge: e.charge, category: e.category, expense_type: e.expenseType||"", booking_id: e.bookingId||null, expense_date: e.date||"", resolved: e.resolved||false, contractor: e.contractor||"" };
   }
 
   async function loadProperties() {
@@ -870,17 +870,23 @@ export default function App() {
     return propOk && monthOk && yearOk;
   }), [calc, dashProp, dashMonth, dashYear]);
 
-  // CoHost Callout expenses — standalone expenses categorised as "CoHost Callout"
-  // that should appear in the cohost's earnings as additional callout income
+  // Expenses that count as callout earnings for the current cohost:
+  // 1. Category "CoHost Callout" (classic flow), OR
+  // 2. Any expense where they are named as the contractor
+  const activeCohostId = impersonating ? impersonating.userId : profile?.id;
   const cohostCalloutExpenses = useMemo(() =>
-    expenses.filter(e => e.category === "CoHost Callout" && e.expenseType !== ""),
-  [expenses]);
+    expenses.filter(e => {
+      if (e.category === "CoHost Callout" && e.expenseType !== "") return true;
+      if (isCohost && e.contractor && e.contractor === activeCohostId && e.expenseType !== "") return true;
+      return false;
+    }),
+  [expenses, isCohost, activeCohostId]);
 
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
-    const freeStandingCallouts = cohostCalloutExpenses
-      .filter(e => e.property === p && !e.bookingId);
-    const calloutEarnings = sum(rows, "coHostCalloutCost") + sum(freeStandingCallouts, "amount");
+    const extraCallouts = cohostCalloutExpenses
+      .filter(e => e.property === p && !(e.category === "CoHost Callout" && e.bookingId));
+    const calloutEarnings = sum(rows, "coHostCalloutCost") + sum(extraCallouts, "amount");
     // Free-standing client expenses profit per property
     const freeStandingExpProfit = expenses
       .filter(e => e.property === p && !e.bookingId && e.expenseType && e.expenseType !== "business")
@@ -971,11 +977,12 @@ export default function App() {
       amount: amt, charge, category: expenseForm.category,
       date: expenseForm.date || (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; })(),
       expenseType, bookingId, resolved: !isCohost,
+      contractor: expenseForm.contractor || "",
     };
     const { error } = await sb.from("expenses").insert(expenseToDb(newExp));
     if (error) { setDbError(error.message); return; }
     setShowExpenseModal(false);
-    setExpenseForm({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "" });
+    setExpenseForm({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   }
 
   async function deleteExpense(id) {
@@ -1305,7 +1312,7 @@ export default function App() {
                     {!isCohost && !isClient && <><br/><strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong> profit</>}
                   </span>
                   {!isClient && (
-                    <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }}
+                    <button onClick={() => { setExpenseForm(f => ({ ...f, property: "CH", description: "", amount: "", charge: "", contractor: isCohost ? (impersonating?.userId || profile?.id || "") : "" })); setShowExpenseModal(true); }}
                       style={{ padding: "9px 12px", borderRadius: 8, border: "none", background: "#f97316", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
                       + Expense
                     </button>
@@ -1335,7 +1342,7 @@ export default function App() {
                       <button onClick={exportBookingsCSV} style={{ ...btn("#0D0D0D", "#fff", false), padding: "10px 14px" }}>⬇ CSV</button>
                     </>
                   )}
-                  {!isClient && <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
+                  {!isClient && <button onClick={() => { setExpenseForm(f => ({ ...f, property: "CH", description: "", amount: "", charge: "", contractor: isCohost ? (impersonating?.userId || profile?.id || "") : "" })); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
                   {!isClient && <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>}
                 </div>
               </div>
@@ -1534,7 +1541,7 @@ export default function App() {
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead style={{ background: "#F9F9F9" }}>
                         <tr>
-                          {["Property","Description","Cost",...(!isCohost ? ["Charge"] : []),"Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
+                          {["Property","Description","Cost",...(!isCohost ? ["Charge"] : []),"Type","Contractor","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -1551,6 +1558,7 @@ export default function App() {
                               <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
                               {!isCohost && <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>}
                               <td style={td}><Tag label={typeLabel} color={typeCol} /></td>
+                              <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.contractor ? (users.find(u => u.id === e.contractor)?.name || (e.contractor === (impersonating?.userId || profile?.id) ? "You" : "CoHost")) : "—"}</td>
                               <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
                                 <button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
@@ -1748,8 +1756,8 @@ export default function App() {
                       {[
                         { label: "Bookings",            value: dashFiltered.length,                                                          icon: "📋", color: "#0D0D0D" },
                         { label: "Commission Earnings", value: fmt(sum(dashFiltered,"cohostComm")),                                          icon: "📊", color: "#8b5cf6" },
-                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount")),  icon: "🔧", color: "#f97316" },
-                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount")), icon: "💰", color: "#db2777" },
+                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")),  icon: "🔧", color: "#f97316" },
+                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")), icon: "💰", color: "#db2777" },
                       ].map(k => (
                         <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
@@ -1812,8 +1820,8 @@ export default function App() {
                             <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                               <td colSpan={5} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                               <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(dashFiltered,"cohostComm"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !e.bookingId),"amount"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount"))}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -2271,9 +2279,9 @@ export default function App() {
 
           function startImpersonate(u) {
             if (u.role === "client") {
-              setImpersonating({ role: "client", clientProperty: u.properties[0], userName: u.name });
+              setImpersonating({ role: "client", clientProperty: u.properties[0], userName: u.name, userId: u.id });
             } else if (u.role === "cohost") {
-              setImpersonating({ role: "cohost", clientProperty: null, cohostProperties: u.properties, userName: u.name });
+              setImpersonating({ role: "cohost", clientProperty: null, cohostProperties: u.properties, userName: u.name, userId: u.id });
             }
             setTab("bookings");
           }
@@ -2819,6 +2827,30 @@ export default function App() {
                 {/* Description */}
                 <div><label style={lbl}>Description</label>
                   <input value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Replaced broken lamp, emergency lockout fix…" style={inp} />
+                </div>
+
+                {/* Contractor — who did the work */}
+                <div>
+                  <label style={lbl}>Contractor — who did the work?</label>
+                  <select value={expenseForm.contractor} onChange={e => setExpenseForm(f => ({ ...f, contractor: e.target.value }))}
+                    style={{ ...inp, background: "#fff" }}>
+                    {isCohost ? (
+                      <>
+                        <option value={impersonating?.userId || profile?.id || ""}>Myself</option>
+                        <option value="">External contractor / N/A</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="">External contractor / N/A</option>
+                        {users.filter(u => u.role === "cohost").map(u => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+                    If a CoHost did the work, select them — the cost is credited to their earnings automatically.
+                  </div>
                 </div>
 
                 {/* Amount */}
