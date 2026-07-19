@@ -845,10 +845,10 @@ export default function App() {
 
   // Free-standing expenses (no booking link) profit = charge - cost for client/cohost-callout types
   const freeStandingProfit = useMemo(() =>
-    expenses.filter(e => !e.bookingId && e.expenseType && e.expenseType !== "business").reduce((acc, e) => {
+    expenses.filter(e => !e.bookingId && e.expenseType).reduce((acc, e) => {
+      if (e.expenseType === "business") return acc - (+e.amount); // business cost reduces profit
       const charge = e.charge != null ? +e.charge : +e.amount;
-      const cost   = +e.amount;
-      return acc + (charge - cost);
+      return acc + (charge - (+e.amount)); // client/callout markup adds profit
     }, 0)
   , [expenses]);
 
@@ -959,21 +959,26 @@ export default function App() {
   async function saveExpense() {
     const amt = parseFloat(expenseForm.amount);
     if (!expenseForm.description || !amt || !expenseForm.category) return;
+    // Business expenses (owner-recorded, not CoHost Callout) are business-wide:
+    // no property, never linked to a booking
+    const isBusinessWide = !isCohost && expenseForm.expenseType === "business" && expenseForm.category !== "CoHost Callout";
     let bookingId = null;
-    if (expenseForm.bookingLink === "last") {
-      const target = lastBookingForProperty(expenseForm.property);
-      if (!target) return;
-      bookingId = target.id;
-    } else if (expenseForm.bookingLink === "specific") {
-      if (!expenseForm.bookingId) return;
-      bookingId = expenseForm.bookingId;
+    if (!isBusinessWide) {
+      if (expenseForm.bookingLink === "last") {
+        const target = lastBookingForProperty(expenseForm.property);
+        if (!target) return;
+        bookingId = target.id;
+      } else if (expenseForm.bookingLink === "specific") {
+        if (!expenseForm.bookingId) return;
+        bookingId = expenseForm.bookingId;
+      }
     }
     // CoHost Callout category always uses "cohost-callout" type regardless of toggle
     const expenseType = isCohost ? "" : (expenseForm.category === "CoHost Callout" ? "cohost-callout" : expenseForm.expenseType);
     const charge = isCohost ? null : (parseFloat(expenseForm.charge) || parseFloat(expenseForm.amount) || null);
     const newExp = {
       id: `EXP${Date.now().toString(36).toUpperCase()}`,
-      property: expenseForm.property, description: expenseForm.description,
+      property: isBusinessWide ? null : expenseForm.property, description: expenseForm.description,
       amount: amt, charge, category: expenseForm.category,
       date: expenseForm.date || (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; })(),
       expenseType, bookingId, resolved: !isCohost,
@@ -1553,7 +1558,7 @@ export default function App() {
                           const typeCol   = e.expenseType === "business" ? "#8b5cf6" : e.expenseType === "owner" ? "#0891b2" : e.expenseType === "cohost-callout" ? "#f97316" : "#f59e0b";
                           return (
                             <tr key={e.id} style={{ background: "#FFFFFF" }}>
-                              <td style={td}><Tag label={e.property} color={propColor(e.property)} /></td>
+                              <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
                               <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                               <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
                               {!isCohost && <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>}
@@ -2777,7 +2782,8 @@ export default function App() {
         const linkOk = expenseForm.bookingLink === "none"
           || (expenseForm.bookingLink === "last" && !!lastB)
           || (expenseForm.bookingLink === "specific" && !!expenseForm.bookingId);
-        const canSave = !!expenseForm.description && !!amt && !!expenseForm.category && linkOk;
+        const isBizWide = !isCohost && expenseForm.expenseType === "business" && expenseForm.category !== "CoHost Callout";
+        const canSave = !!expenseForm.description && !!amt && !!expenseForm.category && (isBizWide || linkOk);
         const lbl = { fontSize: 10, fontWeight: 700, color: "#999999", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 };
         const inp = { padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box", background: "#FFFFFF" };
         return (
@@ -2793,9 +2799,15 @@ export default function App() {
                 {/* Property + Date row */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div><label style={lbl}>Property</label>
-                    <select value={expenseForm.property} onChange={e => setExpenseForm(f => ({ ...f, property: e.target.value }))} style={inp}>
-                      {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    {!isCohost && expenseForm.expenseType === "business" && expenseForm.category !== "CoHost Callout" ? (
+                      <div style={{ ...inp, background: "#f5f3ff", color: "#8b5cf6", fontWeight: 700, display: "flex", alignItems: "center" }}>
+                        🏢 Business-wide
+                      </div>
+                    ) : (
+                      <select value={expenseForm.property} onChange={e => setExpenseForm(f => ({ ...f, property: e.target.value }))} style={inp}>
+                        {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    )}
                   </div>
                   <div><label style={lbl}>Date <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— defaults to today if left blank</span></label>
                     <input type="text" placeholder="DD/MM/YYYY" value={expenseForm.date} onChange={e => setExpenseForm(f => ({ ...f, date: e.target.value }))} style={inp} />
@@ -2898,7 +2910,8 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Booking link */}
+                {/* Booking link — hidden for business-wide expenses */}
+                {!isBizWide ? (
                 <div>
                   <label style={lbl}>Link to Booking</label>
                   <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
@@ -2924,6 +2937,11 @@ export default function App() {
                     <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "9px 12px", fontSize: 12, color: "#666666" }}>This expense won't be tied to any specific booking.</div>
                   )}
                 </div>
+                ) : (
+                  <div style={{ background: "#f5f3ff", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#8b5cf6" }}>
+                    🏢 Business-wide expense — not tied to any property or booking. Comes straight out of business profit.
+                  </div>
+                )}
 
               </div>
               <div style={{ marginTop: 14, fontSize: 12, color: "#999", fontStyle: "italic" }}>
