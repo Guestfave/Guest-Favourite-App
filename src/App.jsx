@@ -285,6 +285,62 @@ function Field({ label, field, form, setForm, type = "text", step }) {
   );
 }
 
+// Normalise a typed date: "14/7" → "14/07/2026" (current year auto-filled), "14/07/26" → "14/07/2026"
+function normalizeDMY(v) {
+  if (!v) return v;
+  const parts = v.split(/[\/\-\.]/).map(s => s.trim()).filter(Boolean);
+  const year = new Date().getFullYear();
+  if (parts.length === 2) {
+    const [d, m] = parts;
+    if (isNaN(+d) || isNaN(+m)) return v;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${year}`;
+  }
+  if (parts.length === 3) {
+    let [d, m, y] = parts;
+    if (isNaN(+d) || isNaN(+m) || isNaN(+y)) return v;
+    if (y.length === 2) y = "20" + y;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+  }
+  return v;
+}
+
+// Date field: type DD/MM (year auto-fills) or click 📅 to pick from a calendar
+function DateField({ label, field, form, setForm }) {
+  // Convert DD/MM/YYYY → YYYY-MM-DD for the native date input
+  const toISO = v => {
+    const p = (v || "").split("/");
+    return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : "";
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label style={{ fontSize: 10, fontWeight: 700, color: "#999999", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>
+      <div style={{ display: "flex", gap: 6, alignItems: "stretch", position: "relative" }}>
+        <input
+          type="text" value={form[field] ?? ""}
+          placeholder="DD/MM — year auto-fills"
+          onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+          onBlur={e => { const n = normalizeDMY(e.target.value); if (n !== e.target.value) setForm(f => ({ ...f, [field]: n })); }}
+          style={{ flex: 1, padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#FFFFFF", outline: "none", fontFamily: "inherit" }}
+        />
+        <div style={{ position: "relative", width: 42 }}>
+          <input
+            type="date"
+            value={toISO(form[field])}
+            onChange={e => {
+              const v = e.target.value; // YYYY-MM-DD
+              if (!v) return;
+              const [y, m, d] = v.split("-");
+              setForm(f => ({ ...f, [field]: `${d}/${m}/${y}` }));
+            }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
+          />
+          <div style={{ pointerEvents: "none", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #E8E8E8", borderRadius: 8, background: "#FAFAFA", fontSize: 16 }}>📅</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const [email, setEmail]         = useState("");
   const [password, setPassword]   = useState("");
@@ -636,6 +692,7 @@ export default function App() {
   const [showClientPayoutBreakdown, setShowClientPayoutBreakdown] = useState(false);
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementForm, setStatementForm] = useState({ property: "CH", month: "All", year: "All" });
+  const [expandedProp, setExpandedProp] = useState(null);
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
@@ -1957,12 +2014,13 @@ export default function App() {
                         </table>
                       </div>
                     )}
-                    <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>By Property</h3>
+                    <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>By Property <span style={{ fontSize: 11, fontWeight: 400, color: "#999" }}>— click a card to see its bookings</span></h3>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14 }}>
                       {dashByProp.filter(p => p.count > 0).map(({ p, count, gross, profit, owner }) => (
-                        <div key={p} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", borderTop: `4px solid ${propColor(p)}` }}>
+                        <div key={p} onClick={() => setExpandedProp(v => v === p ? null : p)}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: expandedProp === p ? `1.5px solid ${propColor(p)}` : "1px solid #F0F0F0", borderTop: `4px solid ${propColor(p)}`, cursor: "pointer" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                            <span style={{ fontWeight: 800, fontSize: 17 }}>{p}</span>
+                            <span style={{ fontWeight: 800, fontSize: 17 }}>{p} <span style={{ fontSize: 11, color: propColor(p), fontWeight: 700 }}>{expandedProp === p ? "▲" : "▼"}</span></span>
                             <Tag label={`${count} bookings`} color={propColor(p)} />
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1976,6 +2034,35 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+
+                    {/* Expanded property bookings */}
+                    {expandedProp && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1.5px solid ${propColor(expandedProp)}`, padding: 20, marginTop: 14 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: propColor(expandedProp), marginBottom: 14 }}>{expandedProp} — Bookings</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>{["ID","Platform","Guest","Dates","Full Gross","Booking Payout","Biz Comm","Client Payout","Profit"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {dashFiltered.filter(b => b.property === expandedProp).map(b => (
+                                <tr key={b.id}>
+                                  <td style={{ ...td, fontSize: 11, color: "#999", fontWeight: 700 }}>{b.id}</td>
+                                  <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{b.startDate} → {b.endDate}</td>
+                                  <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
+                                  <td style={{ ...td, color: "#2563eb" }}>{fmt(b.bookingPayout)}</td>
+                                  <td style={{ ...td, color: "#8b5cf6" }}>{fmt(b.businessComm)}</td>
+                                  <td style={{ ...td, color: "#7c3aed", fontWeight: 700 }}>{fmt(b.ownerPayout)}</td>
+                                  <td style={{ ...td, color: "#16a34a", fontWeight: 700 }}>{fmt(b.businessProfit)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </>
@@ -2665,8 +2752,8 @@ export default function App() {
               </div>
               <Field label="Guest Name" field="guestName" form={form} setForm={setForm} />
               <Field label="Booking ID" form={form} setForm={setForm} field="bookingId" />
-              <Field label="Start Date (DD/MM/YYYY)" field="startDate" form={form} setForm={setForm} />
-              <Field label="End Date (DD/MM/YYYY)" field="endDate" form={form} setForm={setForm} />
+              <DateField label="Start Date" field="startDate" form={form} setForm={setForm} />
+              <DateField label="End Date" field="endDate" form={form} setForm={setForm} />
               <Field label="Full Gross — Total guest paid (£)" field="fullGross" form={form} setForm={setForm} type="number" step="0.01" />
               <Field label="Cleaning Fee (£)" field="cleaningFee" form={form} setForm={setForm} type="number" step="0.01" />
               <Field label="Laundry Fees (£)" field="laundryFees" form={form} setForm={setForm} type="number" step="0.01" />
@@ -2810,7 +2897,7 @@ export default function App() {
                     )}
                   </div>
                   <div><label style={lbl}>Date <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— defaults to today if left blank</span></label>
-                    <input type="text" placeholder="DD/MM/YYYY" value={expenseForm.date} onChange={e => setExpenseForm(f => ({ ...f, date: e.target.value }))} style={inp} />
+                    <input type="text" placeholder="DD/MM — year auto-fills" value={expenseForm.date} onChange={e => setExpenseForm(f => ({ ...f, date: e.target.value }))} onBlur={e => { const n = normalizeDMY(e.target.value); if (n !== e.target.value) setExpenseForm(f => ({ ...f, date: n })); }} style={inp} />
                   </div>
                 </div>
 
