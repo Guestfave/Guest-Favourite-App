@@ -693,6 +693,7 @@ export default function App() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementForm, setStatementForm] = useState({ property: "CH", month: "All", year: "All" });
   const [expandedProp, setExpandedProp] = useState(null);
+  const [detailBookingId, setDetailBookingId] = useState(null);
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
@@ -991,6 +992,7 @@ export default function App() {
       const { error } = await sb.from("bookings").insert(bookingToDb({ ...form, id: newId }));
       if (error) { setDbError(error.message); return; }
     }
+    await loadBookings();
     closeForm();
   }
 
@@ -998,11 +1000,13 @@ export default function App() {
     if (!confirm("Archive this booking? You can restore it from Settings → Archive.")) return;
     const { error } = await sb.from("bookings").update({ deleted: true }).eq("id", id);
     if (error) setDbError(error.message);
+    await loadBookings();
   }
 
   async function restoreBooking(id) {
     const { error } = await sb.from("bookings").update({ deleted: false }).eq("id", id);
     if (error) setDbError(error.message);
+    await loadBookings();
     loadArchived();
   }
 
@@ -1043,6 +1047,7 @@ export default function App() {
     };
     const { error } = await sb.from("expenses").insert(expenseToDb(newExp));
     if (error) { setDbError(error.message); return; }
+    await loadExpenses();
     setShowExpenseModal(false);
     setExpenseForm({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   }
@@ -1051,11 +1056,13 @@ export default function App() {
     if (!confirm("Archive this expense? You can restore it from Settings → Archive.")) return;
     const { error } = await sb.from("expenses").update({ deleted: true }).eq("id", id);
     if (error) setDbError(error.message);
+    await loadExpenses();
   }
 
   async function restoreExpense(id) {
     const { error } = await sb.from("expenses").update({ deleted: false }).eq("id", id);
     if (error) setDbError(error.message);
+    await loadExpenses();
     loadArchived();
   }
 
@@ -1186,6 +1193,7 @@ export default function App() {
     const updated = { ...exp, expenseType, charge: isNaN(charge) ? exp.amount : charge, resolved: true };
     const { error } = await sb.from("expenses").update(expenseToDb(updated)).eq("id", expenseId);
     if (error) setDbError(error.message);
+    await loadExpenses();
     setResolveExpenseId(null); setResolveChargeInput("");
   }
 
@@ -1428,7 +1436,7 @@ export default function App() {
                 {filtered.map(b => {
                   const platColor = b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D";
                   return (
-                    <div key={b.id} style={{ background: "#FFFFFF", borderRadius: 12, border: "1px solid #F0F0F0", boxShadow: "0 2px 6px rgba(0,0,0,0.05)", padding: 16 }}>
+                    <div key={b.id} onClick={() => setDetailBookingId(b.id)} style={{ background: "#FFFFFF", borderRadius: 12, border: "1px solid #F0F0F0", boxShadow: "0 2px 6px rgba(0,0,0,0.05)", padding: 16, cursor: "pointer" }}>
                       {/* Card header */}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                         <div>
@@ -1472,9 +1480,9 @@ export default function App() {
                       {/* Actions */}
                       {!isClient && (
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={() => { setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ flex: 1, background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Invoice</button>
-                          <button onClick={() => openEdit(b)} style={{ flex: 1, background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Edit</button>
-                          <button onClick={() => del(b.id)} style={{ flex: 1, background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Delete</button>
+                          <button onClick={e => { e.stopPropagation(); setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ flex: 1, background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Invoice</button>
+                          <button onClick={e => { e.stopPropagation(); openEdit(b); }} style={{ flex: 1, background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Edit</button>
+                          <button onClick={e => { e.stopPropagation(); del(b.id); }} style={{ flex: 1, background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Delete</button>
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
@@ -1489,9 +1497,9 @@ export default function App() {
               </div>
             ) : (
               <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
-                <div style={{ overflowX: "auto" }}>
+                <div style={{ overflow: "auto", maxHeight: "calc(100vh - 240px)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead style={{ background: "#F9F9F9" }}>
+                    <thead style={{ background: "#F9F9F9", position: "sticky", top: 0, zIndex: 2 }}>
                       <tr>
                         {(isClient
                           ? ["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
@@ -1505,7 +1513,7 @@ export default function App() {
                     </thead>
                     <tbody>
                       {filtered.map(b => (
-                        <tr key={b.id} style={{ background: "#FFFFFF" }}>
+                        <tr key={b.id} onClick={() => setDetailBookingId(b.id)} style={{ background: "#FFFFFF", cursor: "pointer" }} title="Click for full breakdown">
                           {isClient ? (
                             <>
                               <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
@@ -1544,16 +1552,16 @@ export default function App() {
                                 {attachmentCounts[b.id] > 0 && (
                                   <span title={`${attachmentCounts[b.id]} attachment(s)`} style={{ marginRight: 6, fontSize: 11, color: "#666" }}>📎{attachmentCounts[b.id]}</span>
                                 )}
-                                <button onClick={() => { setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Invoice</button>
-                                <button onClick={() => openEdit(b)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button>
-                                <button onClick={() => del(b.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
+                                <button onClick={e => { e.stopPropagation(); setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Invoice</button>
+                                <button onClick={e => { e.stopPropagation(); openEdit(b); }} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button>
+                                <button onClick={e => { e.stopPropagation(); del(b.id); }} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
                               </td>
                             </>
                           )}
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
+                    <tfoot style={{ position: "sticky", bottom: 0, zIndex: 2 }}>
                       <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                         {isClient ? (
                           <>
@@ -3103,6 +3111,64 @@ export default function App() {
                     <button onClick={() => resolveExpenseType(exp.id, "owner")} style={btn("#0891b2", "#fff", false)}>Client Expense</button>
                   </div>
                 </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* BOOKING DETAIL — FULL BREAKDOWN MODAL */}
+      {detailBookingId && (() => {
+        const b = calc.find(x => x.id === detailBookingId);
+        if (!b) return null;
+        const prop = PROPERTIES[b.property] || {};
+        const row = (label, value, color, bold, indent) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f5f5f5", paddingLeft: indent ? 16 : 0 }}>
+            <span style={{ fontSize: 13, color: bold ? "#0D0D0D" : "#666", fontWeight: bold ? 800 : 500 }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: bold ? 800 : 700, color: color || "#0D0D0D" }}>{value}</span>
+          </div>
+        );
+        const lines = [];
+        lines.push(row("Full Gross — what the guest paid", fmt(b.fullGross), "#0D0D0D", true));
+        if (b.platform === "AirBNB") lines.push(row(`Base (gross ÷ 1.1694)`, fmt(b.base), "#666", false, true));
+        else lines.push(row("Base / nightly amount", fmt(b.base), "#666", false, true));
+        lines.push(row("− Guest Service Fee", "−" + fmt(b.guestServiceFee), "#ef4444", false, true));
+        lines.push(row("− Host / Channel Service Fee", "−" + fmt(b.hostServiceFee), "#f97316", false, true));
+        lines.push(row("= Booking Payout (received from platform)", fmt(b.bookingPayout), "#2563eb", true));
+        lines.push(row("− Cleaning Fee", "−" + fmt(b.cleaningFee), "#64748b", false, true));
+        lines.push(row("− Laundry Fees", "−" + fmt(b.laundryFees), "#64748b", false, true));
+        if (!isCohost && (parseFloat(b.spaFeeCharge)||0) > 0) lines.push(row("− Spa Fee Charge", "−" + fmt(b.spaFeeCharge), "#64748b", false, true));
+        if (isCohost && (parseFloat(b.spaFeeCost)||0) > 0) lines.push(row("− Spa Fee (cost)", "−" + fmt(b.spaFeeCost), "#64748b", false, true));
+        if (!isCohost && (parseFloat(b.coHostCalloutCharge)||0) > 0) lines.push(row("− CoHost Callout Charge", "−" + fmt(b.coHostCalloutCharge), "#f97316", false, true));
+        if (isCohost && (parseFloat(b.coHostCalloutCost)||0) > 0) lines.push(row("CoHost Callout (your earnings)", fmt(b.coHostCalloutCost), "#f97316", false, true));
+        if (!isCohost) lines.push(row("= True Net", fmt(b.trueNet), "#7c3aed", true));
+        if (!isCohost) lines.push(row(`− Business Commission (${+(prop.sholom*100||0).toFixed(0)}% of True Net)`, "−" + fmt(b.businessComm), "#8b5cf6", false, true));
+        lines.push(row(`CoHost Commission (${+(prop.cohost*100||0).toFixed(1)}% ${prop.model === "split" ? "of Booking Payout" : "of client-side net"})`, fmt(b.cohostComm), "#db2777", false, true));
+        lines.push(row("= Client Payout", fmt(b.ownerPayout), "#059669", true));
+        if (!isCohost && !isClient) lines.push(row("Business Profit on this booking", fmt(b.businessProfit), "#16a34a", true));
+        return (
+          <div onClick={() => setDetailBookingId(null)} style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 250, padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>{b.guestName}</div>
+                  <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{b.id} · {b.startDate} → {b.endDate}</div>
+                </div>
+                <button onClick={() => setDetailBookingId(null)} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+                <Tag label={b.property} color={propColor(b.property)} />
+                <Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} />
+                {b.bookingId && <Tag label={`Ref: ${b.bookingId}`} color="#64748b" />}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Full Calculation Breakdown</div>
+              {lines}
+              {!isClient && (
+                <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+                  <button onClick={() => { setInvoice(b); setEmailTo(""); setEmailSent(false); setDetailBookingId(null); }} style={btn("#eff6ff", "#2563eb", false)}>Invoice</button>
+                  <button onClick={() => { openEdit(b); setDetailBookingId(null); }} style={btn("#16a34a", "#fff", false)}>Edit Booking</button>
+                  {!isCohost && <button onClick={() => { del(b.id); setDetailBookingId(null); }} style={btn("#fef2f2", "#dc2626", false)}>Archive</button>}
+                </div>
               )}
             </div>
           </div>
