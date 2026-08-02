@@ -695,6 +695,7 @@ export default function App() {
   const [expandedProp, setExpandedProp] = useState(null);
   const [detailBookingId, setDetailBookingId] = useState(null);
   const [showExpenseBreakdown, setShowExpenseBreakdown] = useState(false);
+  const [showProfitBreakdown, setShowProfitBreakdown] = useState(false);
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
@@ -2040,13 +2041,13 @@ export default function App() {
                         { label: "Bookings",          value: dashFiltered.length,                     icon: "📋", color: "#0D0D0D" },
                         { label: "Total Gross",        value: fmt(sum(dashFiltered,"fullGross")),      icon: "💷", color: "#0D0D0D" },
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
-                        { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a" },
+                        { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a", clickable: "profit" },
                         { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed", clickable: "client" },
                         { label: "Total Expenses",     value: fmt(sum(dashExpenses,"amount")),         icon: "💸", color: "#f97316", clickable: "expenses" },
                         { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: "cleaning" },
                       ].map(k => (
                         <div key={k.label}
-                          onClick={k.clickable === "cleaning" ? () => setShowCleaningBreakdown(v => !v) : k.clickable === "client" ? () => setShowClientPayoutBreakdown(v => !v) : k.clickable === "expenses" ? () => setShowExpenseBreakdown(v => !v) : undefined}
+                          onClick={k.clickable === "cleaning" ? () => setShowCleaningBreakdown(v => !v) : k.clickable === "client" ? () => setShowClientPayoutBreakdown(v => !v) : k.clickable === "expenses" ? () => setShowExpenseBreakdown(v => !v) : k.clickable === "profit" ? () => setShowProfitBreakdown(v => !v) : undefined}
                           style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
                           <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
@@ -2054,11 +2055,57 @@ export default function App() {
                             {k.clickable === "cleaning" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showCleaningBreakdown ? "▲ Hide" : "▼ Show"}</span>}
                             {k.clickable === "client" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showClientPayoutBreakdown ? "▲ Hide" : "▼ Show"}</span>}
                             {k.clickable === "expenses" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "profit" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showProfitBreakdown ? "▲ Hide" : "▼ Show"}</span>}
                           </div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Business Profit breakdown panel */}
+                    {showProfitBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #16a34a", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#16a34a", marginBottom: 14 }}>📈 Where the Profit Comes From</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>{["Source","Property","Detail","Dates","Profit"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {dashFiltered.filter(b => (parseFloat(b.businessProfit)||0) !== 0).map(b => (
+                                <tr key={`bk-${b.id}`}>
+                                  <td style={td}><Tag label="Booking" color="#2563eb" /></td>
+                                  <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{b.guestName} <span style={{ color: "#bbb", fontSize: 11 }}>{b.id}</span></td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{b.startDate} → {b.endDate}</td>
+                                  <td style={{ ...td, fontWeight: 700, color: (parseFloat(b.businessProfit)||0) >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(b.businessProfit)}</td>
+                                </tr>
+                              ))}
+                              {expenses.filter(e => !e.bookingId && e.expenseType).map(e => {
+                                const p = e.expenseType === "business" ? -(+e.amount) : ((e.charge != null ? +e.charge : +e.amount) - (+e.amount));
+                                if (p === 0) return null;
+                                return (
+                                  <tr key={`ex-${e.id}`}>
+                                    <td style={td}><Tag label={e.expenseType === "business" ? "Biz Expense" : "Expense Markup"} color={e.expenseType === "business" ? "#8b5cf6" : "#f97316"} /></td>
+                                    <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
+                                    <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
+                                    <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.date || "—"}</td>
+                                    <td style={{ ...td, fontWeight: 700, color: p >= 0 ? "#16a34a" : "#dc2626" }}>{p >= 0 ? fmt(p) : "−" + fmt(-p)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                                <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL BUSINESS PROFIT</td>
+                                <td style={{ ...td, fontWeight: 800, color: "#16a34a" }}>{fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Booking profit = commission + fee margins − linked expenses. Expense rows show markup (charge − cost) or business costs.</div>
+                      </div>
+                    )}
 
                     {/* Expenses breakdown panel */}
                     {showExpenseBreakdown && (
