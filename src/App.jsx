@@ -700,7 +700,14 @@ export default function App() {
   const role           = profile?.role || null;
   const clientProperty = profile?.role === "client" ? (profile.properties?.[0] || null) : null;
   const activeRole     = impersonating ? impersonating.role : role;
-  const activeProperty = impersonating ? impersonating.clientProperty : clientProperty;
+  // All properties this client owns (supports multi-property clients)
+  const clientProperties = (impersonating?.role === "client")
+    ? (impersonating.clientProperties || [impersonating.clientProperty].filter(Boolean))
+    : (profile?.role === "client" ? (profile.properties || []) : []);
+  const [clientPropFilter, setClientPropFilter] = useState("All");
+  const activeProperty = clientPropFilter !== "All"
+    ? clientPropFilter
+    : (clientProperties.length > 1 ? clientProperties.join(" · ") : (impersonating ? impersonating.clientProperty : clientProperty));
   const isCohost = activeRole === "cohost";
   const isClient = activeRole === "client";
 
@@ -866,8 +873,8 @@ export default function App() {
 
   // Client sees only their own property's bookings
   const clientCalc = useMemo(() =>
-    isClient ? calc.filter(b => b.property === activeProperty) : [],
-  [calc, isClient, activeProperty]);
+    isClient ? calc.filter(b => clientProperties.includes(b.property) && (clientPropFilter === "All" || b.property === clientPropFilter)) : [],
+  [calc, isClient, JSON.stringify(clientProperties), clientPropFilter]);
 
   // CoHost sees only properties assigned to them (from users config)
   const cohostUser = useMemo(() => impersonating
@@ -1422,6 +1429,11 @@ export default function App() {
                   <option value="All">All Properties</option>
                   {(isCohost ? (impersonating?.cohostProperties || profile?.properties || PROPERTY_NAMES) : PROPERTY_NAMES).map(p => <option key={p}>{p}{!PROPERTIES[p]?.live ? " (not live)" : ""}</option>)}
                 </select>}
+                {isClient && clientProperties.length > 1 && <select value={clientPropFilter} onChange={e => setClientPropFilter(e.target.value)}
+                  style={{ padding: "9px 14px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+                  <option value="All">All My Properties</option>
+                  {clientProperties.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>}
                 <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 13, color: "#666666" }}>{filtered.length} bookings{!isCohost && !isClient && <> · Profit: <strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong></>}</span>
                   {!isCohost && !isClient && (
@@ -1520,7 +1532,7 @@ export default function App() {
                     <thead style={{ background: "#F9F9F9", position: "sticky", top: 0, zIndex: 2 }}>
                       <tr>
                         {(isClient
-                          ? ["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
+                          ? ["ID","Platform",...(clientProperties.length > 1 ? ["Property"] : []),"Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
                           : isCohost
                             ? ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","CoHost Comm","Callout","Client Payout",""]
                             : ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","True Net","Biz Comm","CoHost Comm","Client Payout","Biz Profit",""]
@@ -1536,6 +1548,7 @@ export default function App() {
                             <>
                               <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
                               <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                              {clientProperties.length > 1 && <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>}
                               <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                               <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                               <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -1583,7 +1596,7 @@ export default function App() {
                       <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                         {isClient ? (
                           <>
-                            <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTALS ({filtered.length})</td>
+                            <td colSpan={4 + (clientProperties.length > 1 ? 1 : 0)} style={{ ...td, fontWeight: 700 }}>TOTALS ({filtered.length})</td>
                             <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.gross)}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"hostServiceFee"))}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"guestServiceFee"))}</td>
@@ -1677,7 +1690,7 @@ export default function App() {
                 && (cdYear  === "All" || parts[2] === cdYear);
           });
           const clientExpenses = expenses.filter(e =>
-            e.property === activeProperty && e.expenseType === "owner" && e.charge != null
+            e.property && clientProperties.includes(e.property) && (clientPropFilter === "All" || e.property === clientPropFilter) && e.expenseType === "owner" && e.charge != null
           ).filter(e => {
             const parts = (e.date||"").split("/");
             return (cdMonth === "All" || parts[1] === cdMonth)
@@ -1691,6 +1704,12 @@ export default function App() {
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+                {clientProperties.length > 1 && (
+                  <select value={clientPropFilter} onChange={e => setClientPropFilter(e.target.value)} style={selSty}>
+                    <option value="All">All My Properties</option>
+                    {clientProperties.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                )}
                 <select value={cdMonth} onChange={e => cdMonthSet(e.target.value)} style={selSty}>
                   <option value="All">All Months</option>
                   {MONTH_NAMES_C.map(m => <option key={m} value={m}>{MONTH_LABELS_C[m]}</option>)}
@@ -2356,7 +2375,7 @@ export default function App() {
           const catColors = { Maintenance:"#f97316", Callout:"#ef4444", Hamper:"#8b5cf6", Replenishables:"#0891b2", Other:"#64748b" };
           // All expenses charged to this client (owner-typed, charge set)
           const allClientExp = expenses.filter(e =>
-            e.property === activeProperty && e.expenseType === "owner" && e.charge != null
+            e.property && clientProperties.includes(e.property) && (clientPropFilter === "All" || e.property === clientPropFilter) && e.expenseType === "owner" && e.charge != null
           );
           const expYearsC = [...new Set(allClientExp.map(e => (e.date||"").split("/")[2]).filter(Boolean))].sort();
           const [ceCat,   setCeCat]   = [expFilterCat,   setExpFilterCat];
@@ -2505,7 +2524,7 @@ export default function App() {
 
           function startImpersonate(u) {
             if (u.role === "client") {
-              setImpersonating({ role: "client", clientProperty: u.properties[0], userName: u.name, userId: u.id });
+              setImpersonating({ role: "client", clientProperty: u.properties[0], clientProperties: u.properties, userName: u.name, userId: u.id });
             } else if (u.role === "cohost") {
               setImpersonating({ role: "cohost", clientProperty: null, cohostProperties: u.properties, userName: u.name, userId: u.id });
             }
