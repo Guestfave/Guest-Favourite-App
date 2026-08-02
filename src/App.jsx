@@ -670,6 +670,7 @@ export default function App() {
   const [dashProp, setDashProp]   = useState("All");
   const [dashMonth, setDashMonth] = useState("All");
   const [dashYear, setDashYear]   = useState("All");
+  const [dashPlatform, setDashPlatform] = useState("All");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   const [showIssues, setShowIssues] = useState(true);
@@ -934,8 +935,9 @@ export default function App() {
     const propOk  = dashProp === "All" || b.property === dashProp;
     const monthOk = dashMonth === "All" || month === dashMonth;
     const yearOk  = dashYear === "All" || year === dashYear;
-    return propOk && monthOk && yearOk;
-  }), [calc, dashProp, dashMonth, dashYear]);
+    const platOk  = dashPlatform === "All" || b.platform === dashPlatform;
+    return propOk && monthOk && yearOk && platOk;
+  }), [calc, dashProp, dashMonth, dashYear, dashPlatform]);
 
   // Expenses that count as callout earnings for the current cohost:
   // 1. Category "CoHost Callout" (classic flow), OR
@@ -985,6 +987,11 @@ export default function App() {
         <option value="All">All Properties</option>
         {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
       </select>
+      <select value={dashPlatform} onChange={e => setDashPlatform(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Platforms</option>
+        {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
       <select value={dashMonth} onChange={e => setDashMonth(e.target.value)}
         style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
         <option value="All">All Months</option>
@@ -995,8 +1002,8 @@ export default function App() {
         <option value="All">All Years</option>
         {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
       </select>
-      {(dashProp !== "All" || dashMonth !== "All" || dashYear !== "All") && (
-        <button onClick={() => { setDashProp("All"); setDashMonth("All"); setDashYear("All"); }}
+      {(dashProp !== "All" || dashMonth !== "All" || dashYear !== "All" || dashPlatform !== "All") && (
+        <button onClick={() => { setDashProp("All"); setDashMonth("All"); setDashYear("All"); setDashPlatform("All"); }}
           style={{ padding: "8px 12px", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#F7F7F7", color: "#666666", cursor: "pointer" }}>
           Clear filters
         </button>
