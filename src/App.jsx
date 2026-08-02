@@ -935,11 +935,28 @@ export default function App() {
   const activeCohostId = impersonating ? impersonating.userId : profile?.id;
   const cohostCalloutExpenses = useMemo(() =>
     expenses.filter(e => {
-      if (e.category === "CoHost Callout" && e.expenseType !== "") return true;
-      if (isCohost && e.contractor && e.contractor === activeCohostId && e.expenseType !== "") return true;
-      return false;
+      const qualifies = (e.category === "CoHost Callout" && e.expenseType !== "")
+        || (isCohost && e.contractor && e.contractor === activeCohostId && e.expenseType !== "");
+      if (!qualifies) return false;
+      // Respect dashboard filters
+      if (dashProp !== "All" && e.property !== dashProp) return false;
+      const parts = (e.date || "").split("/");
+      if (dashMonth !== "All" && parts[1] !== dashMonth) return false;
+      if (dashYear !== "All" && parts[2] !== dashYear) return false;
+      return true;
     }),
-  [expenses, isCohost, activeCohostId]);
+  [expenses, isCohost, activeCohostId, dashProp, dashMonth, dashYear]);
+
+  // Expenses filtered by the dashboard's property/month/year filters
+  const dashExpenses = useMemo(() =>
+    expenses.filter(e => {
+      if (dashProp !== "All" && e.property !== dashProp) return false;
+      const parts = (e.date || "").split("/");
+      if (dashMonth !== "All" && parts[1] !== dashMonth) return false;
+      if (dashYear !== "All" && parts[2] !== dashYear) return false;
+      return true;
+    }),
+  [expenses, dashProp, dashMonth, dashYear]);
 
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
@@ -2006,7 +2023,7 @@ export default function App() {
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
                         { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a" },
                         { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed", clickable: "client" },
-                        { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316", clickable: "expenses" },
+                        { label: "Total Expenses",     value: fmt(sum(dashExpenses,"amount")),         icon: "💸", color: "#f97316", clickable: "expenses" },
                         { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: "cleaning" },
                       ].map(k => (
                         <div key={k.label}
@@ -2034,7 +2051,7 @@ export default function App() {
                               <tr>{["Date","Property","Description","Category","Cost","Charge","Type","Contractor"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
                             </thead>
                             <tbody>
-                              {expenses.map(e => (
+                              {dashExpenses.map(e => (
                                 <tr key={e.id}>
                                   <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{e.date || "—"}</td>
                                   <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
@@ -2050,8 +2067,8 @@ export default function App() {
                             <tfoot>
                               <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                                 <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
-                                <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(expenses,"amount"))}</td>
-                                <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(expenses.reduce((a,e)=>a+(e.charge!=null?+e.charge:+e.amount),0))}</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashExpenses,"amount"))}</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(dashExpenses.reduce((a,e)=>a+(e.charge!=null?+e.charge:+e.amount),0))}</td>
                                 <td colSpan={2} />
                               </tr>
                             </tfoot>
