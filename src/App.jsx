@@ -694,6 +694,7 @@ export default function App() {
   const [statementForm, setStatementForm] = useState({ property: "CH", month: "All", year: "All" });
   const [expandedProp, setExpandedProp] = useState(null);
   const [detailBookingId, setDetailBookingId] = useState(null);
+  const [showExpenseBreakdown, setShowExpenseBreakdown] = useState(false);
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
@@ -1708,16 +1709,50 @@ export default function App() {
                       { label: "Total Gross",        value: fmt(sum(cdFiltered,"fullGross")),            icon: "💷", color: "#2563eb" },
                       { label: "Total Fees",      value: fmt(sum(cdFiltered,"fullGross") - sum(cdFiltered,"ownerPayout")), icon: "💳", color: "#f97316" },
                       { label: "Client Payout",      value: fmt(sum(cdFiltered,"ownerPayout")),          icon: "💰", color: "#059669" },
-                      { label: "Client Expenses",    value: fmt(sum(clientExpenses,"charge")),           icon: "💸", color: "#f97316" },
+                      { label: "Client Expenses",    value: fmt(sum(clientExpenses,"charge")),           icon: "💸", color: "#f97316", clickable: true },
                       { label: "Net After Expenses", value: fmt(sum(cdFiltered,"ownerPayout") - sum(clientExpenses,"charge")), icon: "✅", color: "#16a34a" },
                     ].map(k => (
-                      <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
+                      <div key={k.label}
+                        onClick={k.clickable ? () => setShowExpenseBreakdown(v => !v) : undefined}
+                        style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                         <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                        <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+                        <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}{k.clickable && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}</div>
                         <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                       </div>
                     ))}
                   </div>
+
+                  {/* Client expense breakdown panel */}
+                  {showExpenseBreakdown && (
+                    <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>💸 Your Expense Breakdown</div>
+                      {clientExpenses.length === 0 ? (
+                        <div style={{ fontSize: 13, color: "#999" }}>No expenses charged in this period.</div>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>{["Date","Category","Description","Charge"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                          </thead>
+                          <tbody>
+                            {clientExpenses.map(e => (
+                              <tr key={e.id}>
+                                <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{e.date || "—"}</td>
+                                <td style={td}><Tag label={e.category} color="#f97316" /></td>
+                                <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
+                                <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(e.charge != null ? e.charge : e.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={3} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(clientExpenses,"charge"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      )}
+                    </div>
+                  )}
 
                   {/* Per-booking breakdown */}
                   <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>Booking Breakdown</h3>
@@ -1826,16 +1861,53 @@ export default function App() {
                       {[
                         { label: "Bookings",            value: dashFiltered.length,                                                          icon: "📋", color: "#0D0D0D" },
                         { label: "Commission Earnings", value: fmt(sum(dashFiltered,"cohostComm")),                                          icon: "📊", color: "#8b5cf6" },
-                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")),  icon: "🔧", color: "#f97316" },
+                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")),  icon: "🔧", color: "#f97316", clickable: true },
                         { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")), icon: "💰", color: "#db2777" },
                       ].map(k => (
-                        <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
+                        <div key={k.label}
+                          onClick={k.clickable ? () => setShowExpenseBreakdown(v => !v) : undefined}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}{k.clickable && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}</div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
+
+                    {/* CoHost callout expense breakdown panel */}
+                    {showExpenseBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>🔧 Your Callout Breakdown</div>
+                        {(() => {
+                          const rows = [
+                            ...dashFiltered.filter(b => (parseFloat(b.coHostCalloutCost)||0) > 0).map(b => ({ key: `bk-${b.id}`, date: b.startDate, desc: `Callout on booking ${b.id} (${b.guestName})`, prop: b.property, amt: b.coHostCalloutCost })),
+                            ...cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)).map(e => ({ key: `ex-${e.id}`, date: e.date, desc: e.description, prop: e.property, amt: e.amount })),
+                          ];
+                          if (!rows.length) return <div style={{ fontSize: 13, color: "#999" }}>No callout earnings recorded yet.</div>;
+                          return (
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead><tr>{["Date","Property","Description","Your Earnings"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                              <tbody>
+                                {rows.map(r => (
+                                  <tr key={r.key}>
+                                    <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{r.date || "—"}</td>
+                                    <td style={td}>{r.prop ? <Tag label={r.prop} color={propColor(r.prop)} /> : "—"}</td>
+                                    <td style={{ ...td, fontWeight: 600 }}>{r.desc}</td>
+                                    <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(r.amt)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                                  <td colSpan={3} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                                  <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(rows.reduce((a,r)=>a+(+r.amt||0),0))}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          );
+                        })()}
+                      </div>
+                    )}
                     <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>Earnings by Property</h3>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14, marginBottom: 24 }}>
                       {dashByProp.filter(p => p.count > 0).map(({ p, count, cohostEarnings, calloutEarnings }) => (
@@ -1934,22 +2006,59 @@ export default function App() {
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
                         { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a" },
                         { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed", clickable: "client" },
-                        { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316" },
+                        { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316", clickable: "expenses" },
                         { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: "cleaning" },
                       ].map(k => (
                         <div key={k.label}
-                          onClick={k.clickable === "cleaning" ? () => setShowCleaningBreakdown(v => !v) : k.clickable === "client" ? () => setShowClientPayoutBreakdown(v => !v) : undefined}
+                          onClick={k.clickable === "cleaning" ? () => setShowCleaningBreakdown(v => !v) : k.clickable === "client" ? () => setShowClientPayoutBreakdown(v => !v) : k.clickable === "expenses" ? () => setShowExpenseBreakdown(v => !v) : undefined}
                           style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
                           <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
                             {k.label}
                             {k.clickable === "cleaning" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showCleaningBreakdown ? "▲ Hide" : "▼ Show"}</span>}
                             {k.clickable === "client" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showClientPayoutBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "expenses" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}
                           </div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Expenses breakdown panel */}
+                    {showExpenseBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>💸 Expense Breakdown</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>{["Date","Property","Description","Category","Cost","Charge","Type","Contractor"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {expenses.map(e => (
+                                <tr key={e.id}>
+                                  <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{e.date || "—"}</td>
+                                  <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.category}</td>
+                                  <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(e.amount)}</td>
+                                  <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>
+                                  <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={e.expenseType === "business" ? "#8b5cf6" : e.expenseType === "owner" ? "#0891b2" : e.expenseType === "cohost-callout" ? "#f97316" : "#f59e0b"} /></td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.contractor ? (users.find(u => u.id === e.contractor)?.name || "CoHost") : "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                                <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(expenses,"amount"))}</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(expenses.reduce((a,e)=>a+(e.charge!=null?+e.charge:+e.amount),0))}</td>
+                                <td colSpan={2} />
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Client Payout breakdown panel */}
                     {showClientPayoutBreakdown && (
