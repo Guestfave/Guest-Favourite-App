@@ -1163,10 +1163,24 @@ export default function App() {
     if (!a || !b || isNaN(a) || isNaN(b)) return "";
     return Math.max(0, Math.round((b - a) / 86400000));
   }
+  const csvEsc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  function rowsToCSV(rows) {
+    if (!rows.length) return "";
+    const headers = Object.keys(rows[0]);
+    return [headers.join(","), ...rows.map(r => headers.map(h => csvEsc(r[h])).join(","))].join("\n");
+  }
+  function downloadCSVText(filename, text) {
+    const blob = new Blob([text], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
   function downloadCSV(filename, rows) {
     if (!rows.length) { alert("Nothing to export."); return; }
     const headers = Object.keys(rows[0]);
-    const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const esc = csvEsc;
     const csv = [headers.join(","), ...rows.map(r => headers.map(h => esc(r[h])).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
@@ -1184,20 +1198,38 @@ export default function App() {
       if (f.year !== "All" && parts[2] !== f.year) return false;
       return true;
     });
-    downloadCSV(`guestfavourite-bookings-${new Date().toISOString().slice(0,10)}.csv`,
-      rows.map(b => ({
-        ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
-        BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
-        Nights: nightsBetween(b.startDate, b.endDate),
-        FullGross: b.fullGross, Base: b.base, GuestFee: b.guestServiceFee, HostFee: b.hostServiceFee,
-        CityTax: b.cityTax || 0,
-        BookingPayout: b.bookingPayout, CleaningFee: b.cleaningFee, Laundry: b.laundryFees,
-        SpaCost: b.spaFeeCost || 0, SpaCharge: b.spaFeeCharge || 0,
-        CalloutCost: b.coHostCalloutCost || 0, CalloutCharge: b.coHostCalloutCharge || 0,
-        Mistakes: b.mistakes || 0,
-        TrueNet: b.trueNet, BizComm: b.businessComm, CoHostComm: b.cohostComm,
-        ClientPayout: b.ownerPayout, BizProfit: b.businessProfit,
-      })));
+    const bookingRows = rows.map(b => ({
+      ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
+      BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
+      Nights: nightsBetween(b.startDate, b.endDate),
+      FullGross: b.fullGross, Base: b.base, GuestFee: b.guestServiceFee, HostFee: b.hostServiceFee,
+      CityTax: b.cityTax || 0,
+      BookingPayout: b.bookingPayout, CleaningFee: b.cleaningFee, Laundry: b.laundryFees,
+      SpaCost: b.spaFeeCost || 0, SpaCharge: b.spaFeeCharge || 0,
+      CalloutCost: b.coHostCalloutCost || 0, CalloutCharge: b.coHostCalloutCharge || 0,
+      Mistakes: b.mistakes || 0,
+      TrueNet: b.trueNet, BizComm: b.businessComm, CoHostComm: b.cohostComm,
+      ClientPayout: b.ownerPayout, BizProfit: b.businessProfit,
+    }));
+    // Matching expenses (same property/month/year — expenses have no platform)
+    const expRows = expenses.filter(e => {
+      if (f.property !== "All" && e.property !== f.property) return false;
+      const parts = (e.date || "").split("/");
+      if (f.month !== "All" && parts[1] !== f.month) return false;
+      if (f.year !== "All" && parts[2] !== f.year) return false;
+      return true;
+    }).map(e => ({
+      ID: e.id, Property: e.property || "Business-wide", Description: e.description, Category: e.category,
+      Cost: e.amount, Charge: e.charge ?? e.amount,
+      Markup: +(((e.charge != null ? +e.charge : +e.amount) - +e.amount)).toFixed(2),
+      Type: e.expenseType || "pending",
+      Contractor: e.contractor ? (users.find(u => u.id === e.contractor)?.name || "CoHost") : "External/N-A",
+      Date: e.date, LinkedBooking: e.bookingId || "free-standing",
+    }));
+    if (!bookingRows.length && !expRows.length) { alert("Nothing to export."); return; }
+    const text = "BOOKINGS\n" + rowsToCSV(bookingRows)
+      + (expRows.length ? "\n\nEXPENSES\n" + rowsToCSV(expRows) : "");
+    downloadCSVText(`guestfavourite-export-${new Date().toISOString().slice(0,10)}.csv`, text);
   }
   function exportExpensesCSV() {
     downloadCSV(`guestfavourite-expenses-${new Date().toISOString().slice(0,10)}.csv`,
@@ -1222,9 +1254,8 @@ export default function App() {
       if (year !== "All" && parts[2] !== year) return false;
       return true;
     });
-    const propExpenses = expenses.filter(e => {
+    const propExpensesAll = expenses.filter(e => {
       if (e.expenseType !== "owner") return false;
-      if (e.bookingId) return false; // booking-linked charges are already inside that booking's payout
       if (!allProps && e.property !== property) return false;
       if (allProps && !e.property) return false;
       const parts = (e.date || "").split("/");
@@ -1232,6 +1263,8 @@ export default function App() {
       if (year !== "All" && parts[2] !== year) return false;
       return true;
     });
+    // Only free-standing charges are deducted separately — booking-linked ones already sit inside payouts
+    const propExpenses = propExpensesAll.filter(e => !e.bookingId);
     const clientUser = allProps ? null : users.find(u => u.role === "client" && u.properties?.includes(property));
     const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}${platform !== "All" ? " · " + platform + " only" : ""}`.trim();
     const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
@@ -1296,10 +1329,10 @@ export default function App() {
         const cu = users.find(u => u.role === "client" && u.properties?.includes(p));
         return `<tr><td><strong>${p}</strong></td><td>${cu ? cu.name : "—"}</td><td class="num">${pr.length}</td><td class="num">${pNights}</td><td class="num">${money(pGross)}</td><td class="num">${money(pGross - pPayout)}</td><td class="num">${peCharge ? money(peCharge) : "—"}</td><td class="num strong">${money(pPayout - peCharge)}</td></tr>`;
       }).join("")}</tbody></table>` : "";
-    const expHtml = propExpenses.length ? `
+    const expHtml = propExpensesAll.length ? `
       <h3>Expenses charged this period</h3>
       <table><thead><tr>${allProps ? "<th>Property</th>" : ""}<th>Description</th><th>Category</th><th>Date</th><th class="num">Amount</th></tr></thead>
-      <tbody>${propExpenses.map(e => `<tr>${allProps ? `<td><strong>${e.property || ""}</strong></td>` : ""}<td>${e.description}</td><td>${e.category}</td><td>${e.date}</td><td class="num">${money(e.charge != null ? e.charge : e.amount)}</td></tr>`).join("")}</tbody></table>` : "";
+      <tbody>${propExpensesAll.map(e => `<tr>${allProps ? `<td><strong>${e.property || ""}</strong></td>` : ""}<td>${e.description}${e.bookingId ? ` <span style="color:#999;font-size:10px">(deducted within booking ${e.bookingId})</span>` : ""}</td><td>${e.category}</td><td>${e.date}</td><td class="num">${money(e.charge != null ? e.charge : e.amount)}</td></tr>`).join("")}</tbody></table>` : "";
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${allProps ? "All Properties" : property} — ${periodLabel}</title>
       <style>
@@ -1800,7 +1833,7 @@ export default function App() {
                               <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.contractor ? (users.find(u => u.id === e.contractor)?.name || (e.contractor === (impersonating?.userId || profile?.id) ? "You" : "CoHost")) : "—"}</td>
                               <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
-                                <button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
+                                <div style={{ display: "flex", gap: 4, whiteSpace: "nowrap" }}><button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></div>
                               </td>
                             </tr>
                           );
@@ -2696,7 +2729,7 @@ export default function App() {
                                 <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : "—"}</td>
                                 <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={typeColor(e.expenseType)} /></td>
                                 <td style={{ ...td, color: "#666666", fontSize: 12 }}>{bk ? `${bk.id} (${bk.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
-                                <td style={td}><button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></td>
+                                <td style={td}><div style={{ display: "flex", gap: 4, whiteSpace: "nowrap" }}><button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></div></td>
                               </tr>
                             );
                           })}
