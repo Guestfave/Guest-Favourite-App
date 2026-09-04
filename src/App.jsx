@@ -1156,27 +1156,30 @@ export default function App() {
 
   // ── CLIENT STATEMENT (printable, save as PDF via browser) ────────────────────
   function generateStatement(property, month, year) {
+    const allProps = property === "All";
     const rows = calc.filter(b => {
-      if (b.property !== property) return false;
+      if (!allProps && b.property !== property) return false;
       const parts = (b.startDate || "").split("/");
       if (month !== "All" && parts[1] !== month) return false;
       if (year !== "All" && parts[2] !== year) return false;
       return true;
     });
     const propExpenses = expenses.filter(e => {
-      if (e.property !== property || e.expenseType !== "owner") return false;
+      if (e.expenseType !== "owner") return false;
+      if (!allProps && e.property !== property) return false;
+      if (allProps && !e.property) return false;
       const parts = (e.date || "").split("/");
       if (month !== "All" && parts[1] !== month) return false;
       if (year !== "All" && parts[2] !== year) return false;
       return true;
     });
-    const clientUser = users.find(u => u.role === "client" && u.properties?.includes(property));
+    const clientUser = allProps ? null : users.find(u => u.role === "client" && u.properties?.includes(property));
     const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}`.trim();
     const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
     const totExpCharge = propExpenses.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
     const rowsHtml = rows.map(b => `
       <tr>
-        <td>${b.id}</td><td>${b.platform}</td><td>${b.guestName}</td>
+        <td>${b.id}</td>${allProps ? `<td><strong>${b.property}</strong></td>` : ""}<td>${b.platform}</td><td>${b.guestName}</td>
         <td>${b.startDate} → ${b.endDate}</td>
         <td class="num">£${(+b.fullGross).toFixed(2)}</td>
         <td class="num">£${(+b.fullGross - +b.ownerPayout).toFixed(2)}</td>
@@ -1184,10 +1187,10 @@ export default function App() {
       </tr>`).join("");
     const expHtml = propExpenses.length ? `
       <h3>Expenses charged this period</h3>
-      <table><thead><tr><th>Description</th><th>Category</th><th>Date</th><th class="num">Amount</th></tr></thead>
-      <tbody>${propExpenses.map(e => `<tr><td>${e.description}</td><td>${e.category}</td><td>${e.date}</td><td class="num">£${(e.charge != null ? +e.charge : +e.amount).toFixed(2)}</td></tr>`).join("")}</tbody></table>` : "";
+      <table><thead><tr>${allProps ? "<th>Property</th>" : ""}<th>Description</th><th>Category</th><th>Date</th><th class="num">Amount</th></tr></thead>
+      <tbody>${propExpenses.map(e => `<tr>${allProps ? `<td><strong>${e.property || ""}</strong></td>` : ""}<td>${e.description}</td><td>${e.category}</td><td>${e.date}</td><td class="num">£${(e.charge != null ? +e.charge : +e.amount).toFixed(2)}</td></tr>`).join("")}</tbody></table>` : "";
     const w = window.open("", "_blank");
-    w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${property} — ${periodLabel}</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${allProps ? "All Properties" : property} — ${periodLabel}</title>
       <style>
         body { font-family: 'Barlow', -apple-system, sans-serif; color: #0D0D0D; padding: 40px; max-width: 800px; margin: 0 auto; }
         .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #E61C5D; padding-bottom: 16px; margin-bottom: 24px; }
@@ -1207,11 +1210,11 @@ export default function App() {
       </style></head><body>
       <div class="head">
         <div><div class="brand">GuestFavour<span class="dot">i</span>te</div><div class="meta">Property Management</div></div>
-        <div style="text-align:right"><h2>Client Statement</h2><div class="meta">${property} · ${periodLabel}</div>
+        <div style="text-align:right"><h2>${allProps ? "Monthly Summary Statement" : "Client Statement"}</h2><div class="meta">${allProps ? "All Properties" : property} · ${periodLabel}</div>
         ${clientUser ? `<div class="meta">${clientUser.name}</div>` : ""}</div>
       </div>
-      <table><thead><tr><th>ID</th><th>Platform</th><th>Guest</th><th>Dates</th><th class="num">Gross</th><th class="num">Total Fees</th><th class="num">Your Payout</th></tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="7" style="text-align:center;color:#999">No bookings this period</td></tr>'}</tbody></table>
+      <table><thead><tr><th>ID</th>${allProps ? "<th>Property</th>" : ""}<th>Platform</th><th>Guest</th><th>Dates</th><th class="num">Gross</th><th class="num">Total Fees</th><th class="num">${allProps ? "Client Payout" : "Your Payout"}</th></tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan="${allProps ? 8 : 7}" style="text-align:center;color:#999">No bookings this period</td></tr>`}</tbody></table>
       ${expHtml}
       <div class="totals">
         <div><span>Total Gross</span><span>£${totGross.toFixed(2)}</span></div>
@@ -3564,6 +3567,7 @@ export default function App() {
                 <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Property</label>
                 <select value={statementForm.property} onChange={e => setStatementForm(f => ({ ...f, property: e.target.value }))}
                   style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                  <option value="All">🏢 All Properties (monthly summary)</option>
                   {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
