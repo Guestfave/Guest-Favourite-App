@@ -704,6 +704,8 @@ export default function App() {
   const [showClientPayoutBreakdown, setShowClientPayoutBreakdown] = useState(false);
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementForm, setStatementForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
+  const [showCSVModal, setShowCSVModal] = useState(false);
+  const [csvForm, setCsvForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
   const [expandedProp, setExpandedProp] = useState(null);
   const [detailBookingId, setDetailBookingId] = useState(null);
   const [showExpenseBreakdown, setShowExpenseBreakdown] = useState(false);
@@ -1134,9 +1136,17 @@ export default function App() {
     a.click();
     URL.revokeObjectURL(a.href);
   }
-  function exportBookingsCSV() {
+  function exportBookingsCSV(f = { property: "All", platform: "All", month: "All", year: "All" }) {
+    const rows = calc.filter(b => {
+      if (f.property !== "All" && b.property !== f.property) return false;
+      if (f.platform !== "All" && b.platform !== f.platform) return false;
+      const parts = (b.startDate || "").split("/");
+      if (f.month !== "All" && parts[1] !== f.month) return false;
+      if (f.year !== "All" && parts[2] !== f.year) return false;
+      return true;
+    });
     downloadCSV(`guestfavourite-bookings-${new Date().toISOString().slice(0,10)}.csv`,
-      calc.map(b => ({
+      rows.map(b => ({
         ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
         BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
         FullGross: b.fullGross, Base: b.base, GuestFee: b.guestServiceFee, HostFee: b.hostServiceFee,
@@ -1463,7 +1473,7 @@ export default function App() {
                   {!isCohost && !isClient && (
                     <>
                       <button onClick={() => setShowStatementModal(true)} style={{ ...btn("#7c3aed", "#fff", false), padding: "10px 14px" }}>📄 Statement</button>
-                      <button onClick={exportBookingsCSV} style={{ ...btn("#0D0D0D", "#fff", false), padding: "10px 14px" }}>⬇ CSV</button>
+                      <button onClick={() => setShowCSVModal(true)} style={{ ...btn("#0D0D0D", "#fff", false), padding: "10px 14px" }}>⬇ CSV</button>
                     </>
                   )}
                   {!isClient && <button onClick={() => { setExpenseForm(f => ({ ...f, property: "CH", description: "", amount: "", charge: "", contractor: isCohost ? (impersonating?.userId || profile?.id || "") : "" })); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
@@ -3554,6 +3564,61 @@ export default function App() {
           </div>
         );
       })()}
+
+      {/* CSV EXPORT MODAL */}
+      {showCSVModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <div style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 420 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>⬇ Export Bookings CSV</div>
+              <button onClick={() => setShowCSVModal(false)} style={{ background: "#F0F0F0", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Property</label>
+                  <select value={csvForm.property} onChange={e => setCsvForm(f => ({ ...f, property: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Properties</option>
+                    {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Platform</label>
+                  <select value={csvForm.platform} onChange={e => setCsvForm(f => ({ ...f, platform: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Platforms</option>
+                    {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Month</label>
+                  <select value={csvForm.month} onChange={e => setCsvForm(f => ({ ...f, month: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Months</option>
+                    {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Year</label>
+                  <select value={csvForm.year} onChange={e => setCsvForm(f => ({ ...f, year: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Years</option>
+                    {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#999" }}>Exports every calculated column (gross, fees, payouts, commissions, profit) for the selected bookings — ready for Excel or your accountant.</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button onClick={() => setShowCSVModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
+              <button onClick={() => { exportBookingsCSV(csvForm); setShowCSVModal(false); }} style={btn("#0D0D0D", "#fff", false)}>Export CSV</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* STATEMENT GENERATOR MODAL */}
       {showStatementModal && (
