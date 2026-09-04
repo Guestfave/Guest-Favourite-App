@@ -1191,6 +1191,7 @@ export default function App() {
     });
     const propExpenses = expenses.filter(e => {
       if (e.expenseType !== "owner") return false;
+      if (e.bookingId) return false; // booking-linked charges are already inside that booking's payout
       if (!allProps && e.property !== property) return false;
       if (allProps && !e.property) return false;
       const parts = (e.date || "").split("/");
@@ -1913,13 +1914,16 @@ export default function App() {
             return (cdMonth === "All" || parts[1] === cdMonth)
                 && (cdYear  === "All" || parts[2] === cdYear);
           });
-          const clientExpenses = expenses.filter(e =>
+          const clientExpensesAll = expenses.filter(e =>
             e.property && clientProperties.includes(e.property) && (clientPropFilter === "All" || e.property === clientPropFilter) && e.expenseType === "owner" && e.charge != null
           ).filter(e => {
             const parts = (e.date||"").split("/");
             return (cdMonth === "All" || parts[1] === cdMonth)
                 && (cdYear  === "All" || parts[2] === cdYear);
           });
+          // Booking-linked expenses are already deducted inside that booking's payout —
+          // only free-standing ones are subtracted separately (prevents double counting)
+          const clientExpenses = clientExpensesAll.filter(e => !e.bookingId);
           const selSty = { padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" };
           const hasFilters = cdMonth !== "All" || cdYear !== "All";
           return (
@@ -1986,7 +1990,7 @@ export default function App() {
                   {showExpenseBreakdown && (
                     <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
                       <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>💸 Your Expense Breakdown</div>
-                      {clientExpenses.length === 0 ? (
+                      {clientExpensesAll.length === 0 ? (
                         <div style={{ fontSize: 13, color: "#999" }}>No expenses charged in this period.</div>
                       ) : (
                         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1994,11 +1998,11 @@ export default function App() {
                             <tr>{["Date","Category","Description","Charge"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
                           </thead>
                           <tbody>
-                            {clientExpenses.map(e => (
+                            {clientExpensesAll.map(e => (
                               <tr key={e.id}>
                                 <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{e.date || "—"}</td>
                                 <td style={td}><Tag label={e.category} color="#f97316" /></td>
-                                <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
+                                <td style={{ ...td, fontWeight: 600 }}>{e.description}{e.bookingId && <span style={{ fontSize: 10, color: "#999", fontWeight: 400 }}> — already deducted in booking {e.bookingId}</span>}</td>
                                 <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(e.charge != null ? e.charge : e.amount)}</td>
                               </tr>
                             ))}
@@ -2062,7 +2066,7 @@ export default function App() {
                   </div>
 
                   {/* Client expenses charged to them */}
-                  {clientExpenses.length > 0 && (
+                  {clientExpensesAll.length > 0 && (
                     <>
                       <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>Expenses Charged to You</h3>
                       <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
@@ -2072,7 +2076,7 @@ export default function App() {
                               <tr>{["Date","Category","Description","Charge"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
                             </thead>
                             <tbody>
-                              {clientExpenses.map(e => (
+                              {clientExpensesAll.map(e => (
                                 <tr key={e.id} style={{ background: "#FFFFFF" }}>
                                   <td style={{ ...td, color: "#666666", fontSize: 12 }}>{e.date || "—"}</td>
                                   <td style={td}><Tag label={e.category || "—"} color={{ Maintenance:"#f97316",Callout:"#ef4444",Hamper:"#8b5cf6",Replenishables:"#0891b2",Other:"#64748b" }[e.category] || "#64748b"} /></td>
