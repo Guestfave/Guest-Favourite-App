@@ -703,7 +703,7 @@ export default function App() {
   const [showCleaningBreakdown, setShowCleaningBreakdown] = useState(false);
   const [showClientPayoutBreakdown, setShowClientPayoutBreakdown] = useState(false);
   const [showStatementModal, setShowStatementModal] = useState(false);
-  const [statementForm, setStatementForm] = useState({ property: "CH", month: "All", year: "All" });
+  const [statementForm, setStatementForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
   const [expandedProp, setExpandedProp] = useState(null);
   const [detailBookingId, setDetailBookingId] = useState(null);
   const [showExpenseBreakdown, setShowExpenseBreakdown] = useState(false);
@@ -1155,10 +1155,11 @@ export default function App() {
   }
 
   // ── CLIENT STATEMENT (printable, save as PDF via browser) ────────────────────
-  function generateStatement(property, month, year) {
+  function generateStatement(property, month, year, platform = "All") {
     const allProps = property === "All";
     const rows = calc.filter(b => {
       if (!allProps && b.property !== property) return false;
+      if (platform !== "All" && b.platform !== platform) return false;
       const parts = (b.startDate || "").split("/");
       if (month !== "All" && parts[1] !== month) return false;
       if (year !== "All" && parts[2] !== year) return false;
@@ -1174,7 +1175,7 @@ export default function App() {
       return true;
     });
     const clientUser = allProps ? null : users.find(u => u.role === "client" && u.properties?.includes(property));
-    const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}`.trim();
+    const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}${platform !== "All" ? " · " + platform + " only" : ""}`.trim();
     const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
     const totExpCharge = propExpenses.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
     const rowsHtml = rows.map(b => `
@@ -3571,6 +3572,14 @@ export default function App() {
                   {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Platform</label>
+                <select value={statementForm.platform} onChange={e => setStatementForm(f => ({ ...f, platform: e.target.value }))}
+                  style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                  <option value="All">All Platforms</option>
+                  {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Month</label>
@@ -3593,7 +3602,7 @@ export default function App() {
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
               <button onClick={() => setShowStatementModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
-              <button onClick={() => { generateStatement(statementForm.property, statementForm.month, statementForm.year); setShowStatementModal(false); }} style={btn("#7c3aed", "#fff", false)}>Generate Statement</button>
+              <button onClick={() => { generateStatement(statementForm.property, statementForm.month, statementForm.year, statementForm.platform); setShowStatementModal(false); }} style={btn("#7c3aed", "#fff", false)}>Generate Statement</button>
             </div>
           </div>
         </div>
