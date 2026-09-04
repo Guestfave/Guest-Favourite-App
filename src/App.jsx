@@ -1124,6 +1124,12 @@ export default function App() {
   }
 
   // ── CSV EXPORT ───────────────────────────────────────────────────────────────
+  function nightsBetween(sd, ed) {
+    const p = s => { const m = (s || "").split("/"); return m.length === 3 ? new Date(+m[2], +m[1] - 1, +m[0]) : null; };
+    const a = p(sd), b = p(ed);
+    if (!a || !b || isNaN(a) || isNaN(b)) return "";
+    return Math.max(0, Math.round((b - a) / 86400000));
+  }
   function downloadCSV(filename, rows) {
     if (!rows.length) { alert("Nothing to export."); return; }
     const headers = Object.keys(rows[0]);
@@ -1149,8 +1155,13 @@ export default function App() {
       rows.map(b => ({
         ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
         BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
+        Nights: nightsBetween(b.startDate, b.endDate),
         FullGross: b.fullGross, Base: b.base, GuestFee: b.guestServiceFee, HostFee: b.hostServiceFee,
+        CityTax: b.cityTax || 0,
         BookingPayout: b.bookingPayout, CleaningFee: b.cleaningFee, Laundry: b.laundryFees,
+        SpaCost: b.spaFeeCost || 0, SpaCharge: b.spaFeeCharge || 0,
+        CalloutCost: b.coHostCalloutCost || 0, CalloutCharge: b.coHostCalloutCharge || 0,
+        Mistakes: b.mistakes || 0,
         TrueNet: b.trueNet, BizComm: b.businessComm, CoHostComm: b.cohostComm,
         ClientPayout: b.ownerPayout, BizProfit: b.businessProfit,
       })));
@@ -1158,8 +1169,11 @@ export default function App() {
   function exportExpensesCSV() {
     downloadCSV(`guestfavourite-expenses-${new Date().toISOString().slice(0,10)}.csv`,
       expenses.map(e => ({
-        ID: e.id, Property: e.property, Description: e.description, Category: e.category,
-        Cost: e.amount, Charge: e.charge ?? e.amount, Type: e.expenseType || "pending",
+        ID: e.id, Property: e.property || "Business-wide", Description: e.description, Category: e.category,
+        Cost: e.amount, Charge: e.charge ?? e.amount,
+        Markup: +(((e.charge != null ? +e.charge : +e.amount) - +e.amount)).toFixed(2),
+        Type: e.expenseType || "pending",
+        Contractor: e.contractor ? (users.find(u => u.id === e.contractor)?.name || "CoHost") : "External/N-A",
         Date: e.date, LinkedBooking: e.bookingId || "free-standing",
       })));
   }
@@ -1188,50 +1202,106 @@ export default function App() {
     const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}${platform !== "All" ? " · " + platform + " only" : ""}`.trim();
     const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
     const totExpCharge = propExpenses.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
+    const totNights = rows.reduce((a, b) => a + (+nightsBetween(b.startDate, b.endDate) || 0), 0);
+    // Only include columns that carry data anywhere in the period
+    const hasLaundry = rows.some(b => (parseFloat(b.laundryFees)||0) > 0);
+    const hasSpa     = rows.some(b => (parseFloat(b.spaFeeCharge)||0) > 0);
+    const hasCallout = rows.some(b => (parseFloat(b.coHostCalloutCharge)||0) > 0);
+    const hasCityTax = rows.some(b => (parseFloat(b.cityTax)||0) > 0);
+    const money = v => `£${(+v||0).toFixed(2)}`;
+    const headCells = [
+      "ID", ...(allProps ? ["Property"] : []), "Platform", "Guest", "Dates", "Nights",
+      "Gross", "Channel Fee", "Service Fee", "Cleaning",
+      ...(hasLaundry ? ["Laundry"] : []), ...(hasSpa ? ["Spa"] : []),
+      ...(hasCallout ? ["Callout"] : []), ...(hasCityTax ? ["City Tax"] : []),
+      "Mgmt Fee", allProps ? "Client Payout" : "Your Payout",
+    ];
+    const colCount = headCells.length;
     const rowsHtml = rows.map(b => `
       <tr>
         <td>${b.id}</td>${allProps ? `<td><strong>${b.property}</strong></td>` : ""}<td>${b.platform}</td><td>${b.guestName}</td>
-        <td>${b.startDate} → ${b.endDate}</td>
-        <td class="num">£${(+b.fullGross).toFixed(2)}</td>
-        <td class="num">£${(+b.fullGross - +b.ownerPayout).toFixed(2)}</td>
-        <td class="num strong">£${(+b.ownerPayout).toFixed(2)}</td>
+        <td class="nowrap">${b.startDate} → ${b.endDate}</td>
+        <td class="num">${nightsBetween(b.startDate, b.endDate)}</td>
+        <td class="num">${money(b.fullGross)}</td>
+        <td class="num">${money(b.hostServiceFee)}</td>
+        <td class="num">${money(b.guestServiceFee)}</td>
+        <td class="num">${money(b.cleaningFee)}</td>
+        ${hasLaundry ? `<td class="num">${money(b.laundryFees)}</td>` : ""}
+        ${hasSpa ? `<td class="num">${money(b.spaFeeCharge)}</td>` : ""}
+        ${hasCallout ? `<td class="num">${money(b.coHostCalloutCharge)}</td>` : ""}
+        ${hasCityTax ? `<td class="num">${money(b.cityTax)}</td>` : ""}
+        <td class="num">${money(b.businessComm)}</td>
+        <td class="num strong">${money(b.ownerPayout)}</td>
       </tr>`).join("");
+    const totalsRow = `
+      <tr class="totrow">
+        <td colspan="${allProps ? 5 : 4}"><strong>TOTALS (${rows.length})</strong></td>
+        <td class="num"><strong>${totNights}</strong></td>
+        <td class="num"><strong>${money(totGross)}</strong></td>
+        <td class="num"><strong>${money(sum(rows,"hostServiceFee"))}</strong></td>
+        <td class="num"><strong>${money(sum(rows,"guestServiceFee"))}</strong></td>
+        <td class="num"><strong>${money(sum(rows,"cleaningFee"))}</strong></td>
+        ${hasLaundry ? `<td class="num"><strong>${money(sum(rows,"laundryFees"))}</strong></td>` : ""}
+        ${hasSpa ? `<td class="num"><strong>${money(sum(rows,"spaFeeCharge"))}</strong></td>` : ""}
+        ${hasCallout ? `<td class="num"><strong>${money(sum(rows,"coHostCalloutCharge"))}</strong></td>` : ""}
+        ${hasCityTax ? `<td class="num"><strong>${money(sum(rows,"cityTax"))}</strong></td>` : ""}
+        <td class="num"><strong>${money(sum(rows,"businessComm"))}</strong></td>
+        <td class="num strong"><strong>${money(totPayout)}</strong></td>
+      </tr>`;
+    // Per-property subtotal section (All Properties only)
+    const byPropHtml = allProps ? `
+      <h3>By Property</h3>
+      <table><thead><tr><th>Property</th><th>Client</th><th class="num">Bookings</th><th class="num">Nights</th><th class="num">Gross</th><th class="num">Total Fees</th><th class="num">Expenses Charged</th><th class="num">Net Payout</th></tr></thead>
+      <tbody>${PROPERTY_NAMES.map(p => {
+        const pr = rows.filter(b => b.property === p);
+        if (!pr.length) return "";
+        const pe = propExpenses.filter(e => e.property === p);
+        const peCharge = pe.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
+        const pGross = sum(pr, "fullGross"), pPayout = sum(pr, "ownerPayout");
+        const pNights = pr.reduce((a, b) => a + (+nightsBetween(b.startDate, b.endDate) || 0), 0);
+        const cu = users.find(u => u.role === "client" && u.properties?.includes(p));
+        return `<tr><td><strong>${p}</strong></td><td>${cu ? cu.name : "—"}</td><td class="num">${pr.length}</td><td class="num">${pNights}</td><td class="num">${money(pGross)}</td><td class="num">${money(pGross - pPayout)}</td><td class="num">${peCharge ? money(peCharge) : "—"}</td><td class="num strong">${money(pPayout - peCharge)}</td></tr>`;
+      }).join("")}</tbody></table>` : "";
     const expHtml = propExpenses.length ? `
       <h3>Expenses charged this period</h3>
       <table><thead><tr>${allProps ? "<th>Property</th>" : ""}<th>Description</th><th>Category</th><th>Date</th><th class="num">Amount</th></tr></thead>
-      <tbody>${propExpenses.map(e => `<tr>${allProps ? `<td><strong>${e.property || ""}</strong></td>` : ""}<td>${e.description}</td><td>${e.category}</td><td>${e.date}</td><td class="num">£${(e.charge != null ? +e.charge : +e.amount).toFixed(2)}</td></tr>`).join("")}</tbody></table>` : "";
+      <tbody>${propExpenses.map(e => `<tr>${allProps ? `<td><strong>${e.property || ""}</strong></td>` : ""}<td>${e.description}</td><td>${e.category}</td><td>${e.date}</td><td class="num">${money(e.charge != null ? e.charge : e.amount)}</td></tr>`).join("")}</tbody></table>` : "";
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${allProps ? "All Properties" : property} — ${periodLabel}</title>
       <style>
-        body { font-family: 'Barlow', -apple-system, sans-serif; color: #0D0D0D; padding: 40px; max-width: 800px; margin: 0 auto; }
+        body { font-family: 'Barlow', -apple-system, sans-serif; color: #0D0D0D; padding: 32px; max-width: 1000px; margin: 0 auto; }
         .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #E61C5D; padding-bottom: 16px; margin-bottom: 24px; }
         .brand { font-weight: 900; font-size: 26px; letter-spacing: -0.5px; }
         .brand .dot { color: #E61C5D; }
         h2 { font-size: 18px; margin: 4px 0; } h3 { font-size: 14px; margin: 24px 0 8px; }
         .meta { color: #666; font-size: 13px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-        th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #999; padding: 8px; border-bottom: 2px solid #eee; }
-        td { padding: 8px; border-bottom: 1px solid #f3f3f3; }
-        .num { text-align: right; } .strong { font-weight: 700; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11px; }
+        th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; padding: 6px 5px; border-bottom: 2px solid #eee; }
+        td { padding: 6px 5px; border-bottom: 1px solid #f3f3f3; }
+        .num { text-align: right; } .strong { font-weight: 700; } .nowrap { white-space: nowrap; }
+        .totrow td { background: #fafafa; border-top: 2px solid #e8e8e8; }
         .totals { margin-top: 24px; background: #fafafa; border-radius: 10px; padding: 16px 20px; }
         .totals div { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
         .totals .final { font-weight: 800; font-size: 18px; color: #E61C5D; border-top: 2px solid #eee; padding-top: 8px; margin-top: 8px; }
         .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; }
-        @media print { body { padding: 20px; } }
+        @media print { body { padding: 16px; } table { font-size: 10px; } }
       </style></head><body>
       <div class="head">
         <div><div class="brand">GuestFavour<span class="dot">i</span>te</div><div class="meta">Property Management</div></div>
         <div style="text-align:right"><h2>${allProps ? "Monthly Summary Statement" : "Client Statement"}</h2><div class="meta">${allProps ? "All Properties" : property} · ${periodLabel}</div>
         ${clientUser ? `<div class="meta">${clientUser.name}</div>` : ""}</div>
       </div>
-      <table><thead><tr><th>ID</th>${allProps ? "<th>Property</th>" : ""}<th>Platform</th><th>Guest</th><th>Dates</th><th class="num">Gross</th><th class="num">Total Fees</th><th class="num">${allProps ? "Client Payout" : "Your Payout"}</th></tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan="${allProps ? 8 : 7}" style="text-align:center;color:#999">No bookings this period</td></tr>`}</tbody></table>
+      <table><thead><tr>${headCells.map(h => `<th${["Gross","Channel Fee","Service Fee","Cleaning","Laundry","Spa","Callout","City Tax","Mgmt Fee","Client Payout","Your Payout","Nights"].includes(h) ? ' class="num"' : ""}>${h}</th>`).join("")}</tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan="${colCount}" style="text-align:center;color:#999">No bookings this period</td></tr>`}${rows.length ? totalsRow : ""}</tbody></table>
+      ${byPropHtml}
       ${expHtml}
       <div class="totals">
-        <div><span>Total Gross</span><span>£${totGross.toFixed(2)}</span></div>
-        <div><span>Total Booking Payout</span><span>£${totPayout.toFixed(2)}</span></div>
-        ${totExpCharge ? `<div><span>Expenses Charged</span><span>−£${totExpCharge.toFixed(2)}</span></div>` : ""}
-        <div class="final"><span>Net Payout</span><span>£${(totPayout - totExpCharge).toFixed(2)}</span></div>
+        <div><span>Total Gross</span><span>${money(totGross)}</span></div>
+        <div><span>Total Nights</span><span>${totNights}</span></div>
+        <div><span>Total Fees & Deductions</span><span>${money(totGross - totPayout)}</span></div>
+        <div><span>Total Booking Payout</span><span>${money(totPayout)}</span></div>
+        ${totExpCharge ? `<div><span>Expenses Charged</span><span>−${money(totExpCharge)}</span></div>` : ""}
+        <div class="final"><span>Net Payout</span><span>${money(totPayout - totExpCharge)}</span></div>
       </div>
       <div class="footer">Generated ${new Date().toLocaleDateString("en-GB")} · GuestFavourite · guestfavourite.co.uk</div>
       <script>window.print()</script></body></html>`);
