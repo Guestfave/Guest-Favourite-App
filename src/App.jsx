@@ -705,6 +705,7 @@ export default function App() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementForm, setStatementForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
   const [showCSVModal, setShowCSVModal] = useState(false);
+  const [editExpenseId, setEditExpenseId] = useState(null);
   const [csvForm, setCsvForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
   const [expandedProp, setExpandedProp] = useState(null);
   const [detailBookingId, setDetailBookingId] = useState(null);
@@ -1064,6 +1065,23 @@ export default function App() {
     return rows.reduce((latest, b) => parseDMY(b.endDate) >= parseDMY(latest.endDate) ? b : latest, rows[0]);
   }
 
+  function openEditExpense(e) {
+    setEditExpenseId(e.id);
+    setExpenseForm({
+      property: e.property || "CH",
+      description: e.description || "",
+      amount: e.amount != null ? String(e.amount) : "",
+      charge: e.charge != null ? String(e.charge) : "",
+      expenseType: e.expenseType === "cohost-callout" ? "business" : (e.expenseType || "business"),
+      category: e.category || "Maintenance",
+      date: e.date || "",
+      bookingLink: e.bookingId ? "specific" : "none",
+      bookingId: e.bookingId || "",
+      contractor: e.contractor || "",
+    });
+    setShowExpenseModal(true);
+  }
+
   async function saveExpense() {
     const amt = parseFloat(expenseForm.amount);
     if (!expenseForm.description || !amt || !expenseForm.category) return;
@@ -1092,10 +1110,25 @@ export default function App() {
       expenseType, bookingId, resolved: !isCohost,
       contractor: expenseForm.contractor || "",
     };
-    const { error } = await sb.from("expenses").insert(expenseToDb(newExp));
-    if (error) { setDbError(error.message); return; }
+    if (editExpenseId) {
+      const orig = expenses.find(x => x.id === editExpenseId);
+      const updated = {
+        ...newExp,
+        id: editExpenseId,
+        resolved: orig ? orig.resolved : newExp.resolved,
+        // CoHosts can't see/set charge or type — preserve the originals on their edits
+        charge: isCohost ? (orig?.charge ?? null) : newExp.charge,
+        expenseType: isCohost ? (orig?.expenseType || "") : newExp.expenseType,
+      };
+      const { error } = await sb.from("expenses").update(expenseToDb(updated)).eq("id", editExpenseId);
+      if (error) { setDbError(error.message); return; }
+    } else {
+      const { error } = await sb.from("expenses").insert(expenseToDb(newExp));
+      if (error) { setDbError(error.message); return; }
+    }
     await loadExpenses();
     setShowExpenseModal(false);
+    setEditExpenseId(null);
     setExpenseForm({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   }
 
@@ -1767,7 +1800,7 @@ export default function App() {
                               <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.contractor ? (users.find(u => u.id === e.contractor)?.name || (e.contractor === (impersonating?.userId || profile?.id) ? "You" : "CoHost")) : "—"}</td>
                               <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
-                                <button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
+                                <button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
                               </td>
                             </tr>
                           );
@@ -2663,7 +2696,7 @@ export default function App() {
                                 <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : "—"}</td>
                                 <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={typeColor(e.expenseType)} /></td>
                                 <td style={{ ...td, color: "#666666", fontSize: 12 }}>{bk ? `${bk.id} (${bk.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
-                                <td style={td}><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></td>
+                                <td style={td}><button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></td>
                               </tr>
                             );
                           })}
@@ -3348,8 +3381,8 @@ export default function App() {
           <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div style={{ fontWeight: 800, fontSize: 17 }}>Add Expense / Callout</div>
-                <button onClick={() => setShowExpenseModal(false)} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{editExpenseId ? "Edit Expense" : "Add Expense / Callout"}</div>
+                <button onClick={() => { setShowExpenseModal(false); setEditExpenseId(null); }} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -3506,8 +3539,8 @@ export default function App() {
                 📎 You can attach receipts or photos after saving the expense.
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
-                <button onClick={() => setShowExpenseModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
-                <button onClick={saveExpense} disabled={!canSave} style={btn("#f97316", "#fff", !canSave)}>Save Expense</button>
+                <button onClick={() => { setShowExpenseModal(false); setEditExpenseId(null); }} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
+                <button onClick={saveExpense} disabled={!canSave} style={btn("#f97316", "#fff", !canSave)}>{editExpenseId ? "Save Changes" : "Save Expense"}</button>
               </div>
             </div>
           </div>
