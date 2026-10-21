@@ -503,10 +503,33 @@ function LoginScreen({ onLogin }) {
 
 // ─── ATTACHMENTS COMPONENT ───────────────────────────────────────────────────
 // Reusable upload + thumbnail strip for bookings and expenses
-function Attachments({ recordType, recordId, authUserId, readOnly }) {
+function Attachments({ recordType, recordId, authUserId, readOnly, checkContext }) {
   const [files, setFiles]     = useState([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError]     = useState(null);
+  const [checkingId, setCheckingId] = useState(null);
+  const [checkResults, setCheckResults] = useState({});
+
+  async function checkInvoice(att) {
+    setCheckingId(att.id);
+    setCheckResults(r => ({ ...r, [att.id]: null }));
+    try {
+      const res = await fetch("/api/check-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl: att.file_url, fileName: att.file_name, context: checkContext }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setCheckResults(r => ({ ...r, [att.id]: { verdict: "error", explanation: data.error } }));
+      } else {
+        setCheckResults(r => ({ ...r, [att.id]: data.result }));
+      }
+    } catch (e) {
+      setCheckResults(r => ({ ...r, [att.id]: { verdict: "error", explanation: "Couldn't reach the checker — is the site fully deployed?" } }));
+    }
+    setCheckingId(null);
+  }
 
   useEffect(() => {
     if (!recordId) return;
@@ -586,6 +609,37 @@ function Attachments({ recordType, recordId, authUserId, readOnly }) {
           ))}
         </div>
       )}
+
+      {/* AI invoice check */}
+      {checkContext && files.filter(f => ["pdf","jpg","jpeg","png","gif","webp"].includes((f.file_name||"").split(".").pop().toLowerCase())).map(att => {
+        const r = checkResults[att.id];
+        const col = r ? (r.verdict === "match" ? "#16a34a" : r.verdict === "mismatch" ? "#dc2626" : "#f59e0b") : "#0891b2";
+        return (
+          <div key={`chk-${att.id}`} style={{ marginBottom: 8 }}>
+            <button type="button" onClick={() => checkInvoice(att)} disabled={checkingId === att.id}
+              style={{ background: "#ecfeff", color: "#0891b2", border: "1px solid #a5f3fc", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>
+              {checkingId === att.id ? "Reading invoice…" : `🔍 Check "${att.file_name.length > 28 ? att.file_name.slice(0, 25) + "…" : att.file_name}"`}
+            </button>
+            {r && (
+              <div style={{ marginTop: 6, border: `1.5px solid ${col}`, borderRadius: 10, padding: "10px 12px", fontSize: 12, background: "#fff" }}>
+                <div style={{ fontWeight: 800, color: col, marginBottom: 4 }}>
+                  {r.verdict === "match" ? "✓ Matches" : r.verdict === "mismatch" ? "⚠️ Doesn't match" : r.verdict === "error" ? "✕ Couldn't check" : "? Unclear"}
+                  {r.invoice_total != null && <span style={{ fontWeight: 600, color: "#555" }}> · Invoice total £{(+r.invoice_total).toFixed(2)}</span>}
+                  {r.supplier && <span style={{ fontWeight: 400, color: "#999" }}> · {r.supplier}{r.invoice_date ? ` · ${r.invoice_date}` : ""}</span>}
+                </div>
+                {Array.isArray(r.lines) && r.lines.length > 0 && (
+                  <div style={{ color: "#666", marginBottom: 4 }}>
+                    {r.lines.map((l, i) => <div key={i}>• {l.description} — £{(+l.amount).toFixed(2)}</div>)}
+                  </div>
+                )}
+                {r.matched_against && <div style={{ color: "#16a34a", marginBottom: 2 }}>Matched: {r.matched_against}</div>}
+                {r.verdict === "mismatch" && r.difference != null && <div style={{ color: "#dc2626", marginBottom: 2 }}>Difference: £{Math.abs(+r.difference).toFixed(2)}</div>}
+                {r.explanation && <div style={{ color: "#555" }}>{r.explanation}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {/* Upload button */}
       {!readOnly && (
@@ -1198,6 +1252,7 @@ export default function App() {
       if (f.year !== "All" && parts[2] !== f.year) return false;
       return true;
     });
+    rows.sort((a, b) => parseDMY(a.startDate) - parseDMY(b.startDate));
     const bookingRows = rows.map(b => ({
       ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
       BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
@@ -1218,7 +1273,7 @@ export default function App() {
       if (f.month !== "All" && parts[1] !== f.month) return false;
       if (f.year !== "All" && parts[2] !== f.year) return false;
       return true;
-    }).map(e => ({
+    }).sort((a, b) => parseDMY(a.date) - parseDMY(b.date)).map(e => ({
       ID: e.id, Property: e.property || "Business-wide", Description: e.description, Category: e.category,
       Cost: e.amount, Charge: e.charge ?? e.amount,
       Markup: +(((e.charge != null ? +e.charge : +e.amount) - +e.amount)).toFixed(2),
@@ -1265,6 +1320,9 @@ export default function App() {
     });
     // Only free-standing charges are deducted separately — booking-linked ones already sit inside payouts
     const propExpenses = propExpensesAll.filter(e => !e.bookingId);
+    // Chronological order for the document
+    rows.sort((a, b) => parseDMY(a.startDate) - parseDMY(b.startDate));
+    propExpensesAll.sort((a, b) => parseDMY(a.date) - parseDMY(b.date));
     const clientUser = allProps ? null : users.find(u => u.role === "client" && u.properties?.includes(property));
     const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}${platform !== "All" ? " · " + platform + " only" : ""}`.trim();
     const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
@@ -3326,7 +3384,17 @@ export default function App() {
             </div>
 
             {editId && (
-              <Attachments recordType="booking" recordId={editId} authUserId={authUser?.id} readOnly={false} />
+              <Attachments recordType="booking" recordId={editId} authUserId={authUser?.id} readOnly={false}
+                checkContext={{
+                  record: "booking", property: form.property, platform: form.platform, guest: form.guestName,
+                  dates: `${form.startDate} to ${form.endDate}`,
+                  full_gross: +form.fullGross || 0,
+                  cleaning_fee_charged_to_client: +form.cleaningFee || 0,
+                  laundry_fees: +form.laundryFees || 0,
+                  spa_cost: +form.spaFeeCost || 0, spa_charge: +form.spaFeeCharge || 0,
+                  callout_cost: +form.coHostCalloutCost || 0, callout_charge: +form.coHostCalloutCharge || 0,
+                  mistakes_absorbed: +form.mistakes || 0, city_tax: +form.cityTax || 0,
+                }} />
             )}
             {!editId && (
               <div style={{ marginTop: 14, fontSize: 12, color: "#999", fontStyle: "italic" }}>Save the booking first to add attachments.</div>
@@ -3569,7 +3637,15 @@ export default function App() {
 
               </div>
               <div style={{ marginTop: 14, fontSize: 12, color: "#999", fontStyle: "italic" }}>
-                📎 You can attach receipts or photos after saving the expense.
+                {editExpenseId
+                  ? <Attachments recordType="expense" recordId={editExpenseId} authUserId={authUser?.id} readOnly={false}
+                      checkContext={{
+                        record: "expense", property: expenseForm.property, description: expenseForm.description,
+                        category: expenseForm.category, date: expenseForm.date,
+                        cost: +expenseForm.amount || 0,
+                        charge_to_client: isCohost ? undefined : (+expenseForm.charge || +expenseForm.amount || 0),
+                      }} />
+                  : <>📎 You can attach receipts or photos after saving the expense — save it, then press Edit.</>}
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
                 <button onClick={() => { setShowExpenseModal(false); setEditExpenseId(null); }} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
@@ -3603,7 +3679,8 @@ export default function App() {
               </div>
 
               {/* Attachments */}
-              <Attachments recordType="expense" recordId={exp.id} authUserId={authUser?.id} readOnly={false} />
+              <Attachments recordType="expense" recordId={exp.id} authUserId={authUser?.id} readOnly={false}
+                checkContext={{ record: "expense", property: exp.property, description: exp.description, category: exp.category, date: exp.date, cost: +exp.amount || 0 }} />
 
               {/* Charge field */}
               <div style={{ marginBottom: 16 }}>
