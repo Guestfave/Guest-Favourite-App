@@ -53,6 +53,7 @@ const DEFAULT_PROPERTIES = {
 // Website:     nightlyRate = (fullGross - cleaningFee) / 1.06; guestServiceFee = nightlyRate x 6%
 //              bookingPayout = fullGross - guestServiceFee (= nightlyRate + cleaningFee)
 //              channelServiceFee = fullGross x 0.5%, deducted at the True Net stage (charged to owner)
+// Sykes:       commission = fullGross x 18% x 1.20 VAT (= 21.6%); bookingPayout = fullGross x 78.4%
 // VRBO:        guestServiceFee = fullGross x 15% (direct); bookingPayout = fullGross - guestServiceFee
 //              nightlyRate = (fullGross - cleaningFee) / 1.06
 //              channelServiceFee = nightlyRate x 6%, deducted at the True Net stage (charged to owner)
@@ -61,6 +62,7 @@ const PLATFORMS = {
   Booking: { type: "direct",  guestFee: 0.1660, hostFee: 0,     vat: 1.00, hostFeeLabel: "Host Service Fee" },
   Website: { type: "website", guestFee: 0.06,   hostFee: 0.005, vat: 1.00, hostFeeLabel: "Channel Service Fee" },
   VRBO:    { type: "vrbo",    guestFee: 0.15,   hostFee: 0.06,  vat: 1.00, hostFeeLabel: "Channel Service Fee" },
+  Sykes:   { type: "sykes",   guestFee: 0,      hostFee: 0.18,  vat: 1.20, hostFeeLabel: "Sykes Commission" },
 };
 const PLATFORM_NAMES = Object.keys(PLATFORMS);
 
@@ -200,6 +202,12 @@ function calcBooking(b, propertiesMap) {
     hostServiceFee    = nightlyRate * platform.hostFee;
     bookingPayout     = fg - guestServiceFee;
     base              = nightlyRate + cf;
+  } else if (platform.type === "sykes") {
+    // Sykes: commission of 18% + VAT (21.6%) on the Full Gross; no separate guest fee
+    base            = fg;
+    guestServiceFee = 0;
+    hostServiceFee  = fg * platform.hostFee * platform.vat;
+    bookingPayout   = fg - hostServiceFee;
   } else if (platform.type === "direct") {
     // Booking.com: guest fee is a direct % of Full Gross, no host fee
     guestServiceFee = fg * platform.guestFee;
@@ -1693,7 +1701,7 @@ export default function App() {
               /* ── MOBILE: booking cards ── */
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {filtered.map(b => {
-                  const platColor = b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D";
+                  const platColor = b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D";
                   return (
                     <div key={b.id} onClick={() => setDetailBookingId(b.id)} style={{ background: "#FFFFFF", borderRadius: 12, border: "1px solid #F0F0F0", boxShadow: "0 2px 6px rgba(0,0,0,0.05)", padding: 16, cursor: "pointer" }}>
                       {/* Card header */}
@@ -1776,7 +1784,7 @@ export default function App() {
                           {isClient ? (
                             <>
                               <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
-                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
                               {clientProperties.length > 1 && <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>}
                               <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                               <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
@@ -1794,7 +1802,7 @@ export default function App() {
                             <>
                               <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
                               <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
-                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
                               <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                               <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                               <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -2155,7 +2163,7 @@ export default function App() {
                             return (
                               <tr key={b.id} style={{ background: "#FFFFFF" }}>
                                 <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
-                                <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                                <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
                                 <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                                 <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                                 <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -2640,7 +2648,7 @@ export default function App() {
                               {dashFiltered.filter(b => b.property === expandedProp).map(b => (
                                 <tr key={b.id}>
                                   <td style={{ ...td, fontSize: 11, color: "#999", fontWeight: 700 }}>{b.id}</td>
-                                  <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                                  <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
                                   <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                                   <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{b.startDate} → {b.endDate}</td>
                                   <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -3765,7 +3773,7 @@ export default function App() {
               </div>
               <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
                 <Tag label={b.property} color={propColor(b.property)} />
-                <Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} />
+                <Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} />
                 {b.bookingId && <Tag label={`Ref: ${b.bookingId}`} color="#64748b" />}
               </div>
               <div style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Full Calculation Breakdown</div>
