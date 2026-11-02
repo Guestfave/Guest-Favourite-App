@@ -53,6 +53,7 @@ const DEFAULT_PROPERTIES = {
 // Website:     nightlyRate = (fullGross - cleaningFee) / 1.06; guestServiceFee = nightlyRate x 6%
 //              bookingPayout = fullGross - guestServiceFee (= nightlyRate + cleaningFee)
 //              channelServiceFee = fullGross x 0.5%, deducted at the True Net stage (charged to owner)
+// Sykes:       commission = fullGross x 18% x 1.20 VAT (= 21.6%); bookingPayout = fullGross x 78.4%
 // VRBO:        guestServiceFee = fullGross x 15% (direct); bookingPayout = fullGross - guestServiceFee
 //              nightlyRate = (fullGross - cleaningFee) / 1.06
 //              channelServiceFee = nightlyRate x 6%, deducted at the True Net stage (charged to owner)
@@ -61,6 +62,7 @@ const PLATFORMS = {
   Booking: { type: "direct",  guestFee: 0.1660, hostFee: 0,     vat: 1.00, hostFeeLabel: "Host Service Fee" },
   Website: { type: "website", guestFee: 0.06,   hostFee: 0.005, vat: 1.00, hostFeeLabel: "Channel Service Fee" },
   VRBO:    { type: "vrbo",    guestFee: 0.15,   hostFee: 0.06,  vat: 1.00, hostFeeLabel: "Channel Service Fee" },
+  Sykes:   { type: "sykes",   guestFee: 0,      hostFee: 0.18,  vat: 1.20, hostFeeLabel: "Sykes Commission" },
 };
 const PLATFORM_NAMES = Object.keys(PLATFORMS);
 
@@ -179,6 +181,7 @@ function calcBooking(b, propertiesMap) {
   const chC  = parseFloat(b.coHostCalloutCost)   || 0;
   const chQ  = parseFloat(b.coHostCalloutCharge) || 0;
   const mis  = parseFloat(b.mistakes)            || 0;
+  const ctax = parseFloat(b.cityTax)             || 0;
 
   const platform = PLATFORMS[b.platform] || PLATFORMS["AirBNB"];
 
@@ -199,6 +202,12 @@ function calcBooking(b, propertiesMap) {
     hostServiceFee    = nightlyRate * platform.hostFee;
     bookingPayout     = fg - guestServiceFee;
     base              = nightlyRate + cf;
+  } else if (platform.type === "sykes") {
+    // Sykes: commission of 18% + VAT (21.6%) on the Full Gross; no separate guest fee
+    base            = fg;
+    guestServiceFee = 0;
+    hostServiceFee  = fg * platform.hostFee * platform.vat;
+    bookingPayout   = fg - hostServiceFee;
   } else if (platform.type === "direct") {
     // Booking.com: guest fee is a direct % of Full Gross, no host fee
     guestServiceFee = fg * platform.guestFee;
@@ -212,6 +221,10 @@ function calcBooking(b, propertiesMap) {
     hostServiceFee  = base * platform.hostFee * platform.vat;
     bookingPayout   = base - hostServiceFee;
   }
+
+  // City tax (mainly Booking.com): included in the gross but never revenue —
+  // deduct it from the payout before anything downstream is calculated
+  bookingPayout = bookingPayout - ctax;
 
   // For Website and VRBO, the Channel Service Fee is charged to the OWNER separately,
   // so it comes off at the True Net stage (not already reflected in bookingPayout)
@@ -248,7 +261,11 @@ function calcBooking(b, propertiesMap) {
 
 const fmt    = n => `£${Number(n || 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const sum    = (arr, key) => arr.reduce((a, b) => a + (b[key] || 0), 0);
-const nextId = bs => `CC${String(bs.length + 1).padStart(5, "0")}`;
+// Timestamp-based IDs — collision-proof even when users only see a subset of records
+const nextId = () => {
+  const d = new Date();
+  return `CC${d.getFullYear().toString().slice(2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}${String(d.getSeconds()).padStart(2,"0")}`;
+};
 // Parse a "DD/MM/YYYY" date string into a sortable number (YYYYMMDD). Invalid/empty -> 0.
 const parseDMY = (s) => {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((s || "").trim());
@@ -257,7 +274,7 @@ const parseDMY = (s) => {
 };
 
 const EMPTY = {
-  property: "CH", guestName: "", bookingId: "", platform: "AirBNB",
+  property: "CH", guestName: "", bookingId: "", platform: "AirBNB", cityTax: "",
   startDate: "", endDate: "", fullGross: "", cleaningFee: "", laundryFees: "",
   spaFeeCost: "", spaFeeCharge: "", coHostCalloutCost: "", coHostCalloutCharge: "", mistakes: "",
 };
@@ -277,6 +294,62 @@ function Field({ label, field, form, setForm, type = "text", step }) {
         onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
         style={{ padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#FFFFFF", outline: "none", fontFamily: "inherit" }}
       />
+    </div>
+  );
+}
+
+// Normalise a typed date: "14/7" → "14/07/2026" (current year auto-filled), "14/07/26" → "14/07/2026"
+function normalizeDMY(v) {
+  if (!v) return v;
+  const parts = v.split(/[\/\-\.]/).map(s => s.trim()).filter(Boolean);
+  const year = new Date().getFullYear();
+  if (parts.length === 2) {
+    const [d, m] = parts;
+    if (isNaN(+d) || isNaN(+m)) return v;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${year}`;
+  }
+  if (parts.length === 3) {
+    let [d, m, y] = parts;
+    if (isNaN(+d) || isNaN(+m) || isNaN(+y)) return v;
+    if (y.length === 2) y = "20" + y;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+  }
+  return v;
+}
+
+// Date field: type DD/MM (year auto-fills) or click 📅 to pick from a calendar
+function DateField({ label, field, form, setForm }) {
+  // Convert DD/MM/YYYY → YYYY-MM-DD for the native date input
+  const toISO = v => {
+    const p = (v || "").split("/");
+    return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : "";
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label style={{ fontSize: 10, fontWeight: 700, color: "#999999", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>
+      <div style={{ display: "flex", gap: 6, alignItems: "stretch", position: "relative" }}>
+        <input
+          type="text" value={form[field] ?? ""}
+          placeholder="DD/MM — year auto-fills"
+          onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+          onBlur={e => { const n = normalizeDMY(e.target.value); if (n !== e.target.value) setForm(f => ({ ...f, [field]: n })); }}
+          style={{ flex: 1, padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#FFFFFF", outline: "none", fontFamily: "inherit" }}
+        />
+        <div style={{ position: "relative", width: 42 }}>
+          <input
+            type="date"
+            value={toISO(form[field])}
+            onChange={e => {
+              const v = e.target.value; // YYYY-MM-DD
+              if (!v) return;
+              const [y, m, d] = v.split("-");
+              setForm(f => ({ ...f, [field]: `${d}/${m}/${y}` }));
+            }}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
+          />
+          <div style={{ pointerEvents: "none", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #E8E8E8", borderRadius: 8, background: "#FAFAFA", fontSize: 16 }}>📅</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -438,10 +511,33 @@ function LoginScreen({ onLogin }) {
 
 // ─── ATTACHMENTS COMPONENT ───────────────────────────────────────────────────
 // Reusable upload + thumbnail strip for bookings and expenses
-function Attachments({ recordType, recordId, authUserId, readOnly }) {
+function Attachments({ recordType, recordId, authUserId, readOnly, checkContext }) {
   const [files, setFiles]     = useState([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError]     = useState(null);
+  const [checkingId, setCheckingId] = useState(null);
+  const [checkResults, setCheckResults] = useState({});
+
+  async function checkInvoice(att) {
+    setCheckingId(att.id);
+    setCheckResults(r => ({ ...r, [att.id]: null }));
+    try {
+      const res = await fetch("/api/check-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl: att.file_url, fileName: att.file_name, context: checkContext }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setCheckResults(r => ({ ...r, [att.id]: { verdict: "error", explanation: data.error } }));
+      } else {
+        setCheckResults(r => ({ ...r, [att.id]: data.result }));
+      }
+    } catch (e) {
+      setCheckResults(r => ({ ...r, [att.id]: { verdict: "error", explanation: "Couldn't reach the checker — is the site fully deployed?" } }));
+    }
+    setCheckingId(null);
+  }
 
   useEffect(() => {
     if (!recordId) return;
@@ -522,6 +618,37 @@ function Attachments({ recordType, recordId, authUserId, readOnly }) {
         </div>
       )}
 
+      {/* AI invoice check */}
+      {checkContext && files.filter(f => ["pdf","jpg","jpeg","png","gif","webp"].includes((f.file_name||"").split(".").pop().toLowerCase())).map(att => {
+        const r = checkResults[att.id];
+        const col = r ? (r.verdict === "match" ? "#16a34a" : r.verdict === "mismatch" ? "#dc2626" : "#f59e0b") : "#0891b2";
+        return (
+          <div key={`chk-${att.id}`} style={{ marginBottom: 8 }}>
+            <button type="button" onClick={() => checkInvoice(att)} disabled={checkingId === att.id}
+              style={{ background: "#ecfeff", color: "#0891b2", border: "1px solid #a5f3fc", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>
+              {checkingId === att.id ? "Reading invoice…" : `🔍 Check "${att.file_name.length > 28 ? att.file_name.slice(0, 25) + "…" : att.file_name}"`}
+            </button>
+            {r && (
+              <div style={{ marginTop: 6, border: `1.5px solid ${col}`, borderRadius: 10, padding: "10px 12px", fontSize: 12, background: "#fff" }}>
+                <div style={{ fontWeight: 800, color: col, marginBottom: 4 }}>
+                  {r.verdict === "match" ? "✓ Matches" : r.verdict === "mismatch" ? "⚠️ Doesn't match" : r.verdict === "error" ? "✕ Couldn't check" : "? Unclear"}
+                  {r.invoice_total != null && <span style={{ fontWeight: 600, color: "#555" }}> · Invoice total £{(+r.invoice_total).toFixed(2)}</span>}
+                  {r.supplier && <span style={{ fontWeight: 400, color: "#999" }}> · {r.supplier}{r.invoice_date ? ` · ${r.invoice_date}` : ""}</span>}
+                </div>
+                {Array.isArray(r.lines) && r.lines.length > 0 && (
+                  <div style={{ color: "#666", marginBottom: 4 }}>
+                    {r.lines.map((l, i) => <div key={i}>• {l.description} — £{(+l.amount).toFixed(2)}</div>)}
+                  </div>
+                )}
+                {r.matched_against && <div style={{ color: "#16a34a", marginBottom: 2 }}>Matched: {r.matched_against}</div>}
+                {r.verdict === "mismatch" && r.difference != null && <div style={{ color: "#dc2626", marginBottom: 2 }}>Difference: £{Math.abs(+r.difference).toFixed(2)}</div>}
+                {r.explanation && <div style={{ color: "#555" }}>{r.explanation}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
       {/* Upload button */}
       {!readOnly && (
         <>
@@ -554,6 +681,7 @@ function CalcPreview({ form, isCohost }) {
     ["Base (Nightly + Cleaning)", fmt(c.base),            "#94a3b8", null],
     [feeLabels.guest,  fmt(c.guestServiceFee), "#f87171", null],
     [feeLabels.host,   fmt(c.hostServiceFee),  "#fb923c", null],
+    ...((parseFloat(form.cityTax)||0) > 0 ? [["City Tax (deducted)", fmt(form.cityTax), "#f87171", null]] : []),
     ["Booking Payout",            fmt(c.bookingPayout),   "#60a5fa", null],
     ["True Net",                  fmt(c.trueNet),         "#a78bfa", "trueNet"],
     [`Business Comm ${+(prop.sholom*100).toFixed(0)}% of True Net`, fmt(c.businessComm), "#4ade80", "businessComm"],
@@ -610,8 +738,14 @@ export default function App() {
   const [dashProp, setDashProp]   = useState("All");
   const [dashMonth, setDashMonth] = useState("All");
   const [dashYear, setDashYear]   = useState("All");
+  const [dashPlatform, setDashPlatform] = useState("All");
+  const now = new Date();
+  const [calMonth, setCalMonth] = useState(now.getMonth());       // 0-11
+  const [calYear, setCalYear]   = useState(now.getFullYear());
+  const [calProp, setCalProp]         = useState("All");
+  const [calPlatform, setCalPlatform] = useState("All");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "" });
+  const [expenseForm, setExpenseForm] = useState({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   const [showIssues, setShowIssues] = useState(true);
   const [resolveExpenseId, setResolveExpenseId] = useState(null);
   const [resolveChargeInput, setResolveChargeInput] = useState("");
@@ -628,12 +762,31 @@ export default function App() {
   const [propertyForm, setPropertyForm]           = useState({ name: "", sholom: "", cohost: "", cohostName: "", model: "tiered", live: false });
   const [impersonating, setImpersonating]         = useState(null);
   const [settingsTab, setSettingsTab]             = useState("users");
+  const [showCleaningBreakdown, setShowCleaningBreakdown] = useState(false);
+  const [showClientPayoutBreakdown, setShowClientPayoutBreakdown] = useState(false);
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [statementForm, setStatementForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
+  const [showCSVModal, setShowCSVModal] = useState(false);
+  const [editExpenseId, setEditExpenseId] = useState(null);
+  const [csvForm, setCsvForm] = useState({ property: "All", platform: "All", month: "All", year: "All" });
+  const [expandedProp, setExpandedProp] = useState(null);
+  const [detailBookingId, setDetailBookingId] = useState(null);
+  const [showExpenseBreakdown, setShowExpenseBreakdown] = useState(false);
+  const [showProfitBreakdown, setShowProfitBreakdown] = useState(false);
+  const [showSpaBreakdown, setShowSpaBreakdown] = useState(false);
 
   // Derived role values — respect impersonation
   const role           = profile?.role || null;
   const clientProperty = profile?.role === "client" ? (profile.properties?.[0] || null) : null;
   const activeRole     = impersonating ? impersonating.role : role;
-  const activeProperty = impersonating ? impersonating.clientProperty : clientProperty;
+  // All properties this client owns (supports multi-property clients)
+  const clientProperties = (impersonating?.role === "client")
+    ? (impersonating.clientProperties || [impersonating.clientProperty].filter(Boolean))
+    : (profile?.role === "client" ? (profile.properties || []) : []);
+  const [clientPropFilter, setClientPropFilter] = useState("All");
+  const activeProperty = clientPropFilter !== "All"
+    ? clientPropFilter
+    : (clientProperties.length > 1 ? clientProperties.join(" · ") : (impersonating ? impersonating.clientProperty : clientProperty));
   const isCohost = activeRole === "cohost";
   const isClient = activeRole === "client";
 
@@ -664,16 +817,16 @@ export default function App() {
 
   // ── Data loaders ──────────────────────────────────────────────────────────────
   function dbToBooking(r) {
-    return { id: r.id, property: r.property, platform: r.platform, guestName: r.guest_name, bookingId: r.booking_ref, startDate: r.start_date, endDate: r.end_date, fullGross: r.full_gross, cleaningFee: r.cleaning_fee, laundryFees: r.laundry_fees, mistakes: r.mistakes, spaFeeCost: r.spa_fee_cost, spaFeeCharge: r.spa_fee_charge, coHostCalloutCost: r.co_host_callout_cost, coHostCalloutCharge: r.co_host_callout_charge };
+    return { id: r.id, property: r.property, platform: r.platform, guestName: r.guest_name, bookingId: r.booking_ref, startDate: r.start_date, endDate: r.end_date, fullGross: r.full_gross, cleaningFee: r.cleaning_fee, laundryFees: r.laundry_fees, mistakes: r.mistakes, spaFeeCost: r.spa_fee_cost, spaFeeCharge: r.spa_fee_charge, coHostCalloutCost: r.co_host_callout_cost, coHostCalloutCharge: r.co_host_callout_charge, cityTax: r.city_tax || 0 };
   }
   function bookingToDb(b) {
-    return { id: b.id, property: b.property, platform: b.platform, guest_name: b.guestName, booking_ref: b.bookingId||"", start_date: b.startDate||"", end_date: b.endDate||"", full_gross: +b.fullGross||0, cleaning_fee: +b.cleaningFee||0, laundry_fees: +b.laundryFees||0, mistakes: +b.mistakes||0, spa_fee_cost: +b.spaFeeCost||0, spa_fee_charge: +b.spaFeeCharge||0, co_host_callout_cost: +b.coHostCalloutCost||0, co_host_callout_charge: +b.coHostCalloutCharge||0, updated_at: new Date().toISOString() };
+    return { id: b.id, property: b.property, platform: b.platform, guest_name: b.guestName, booking_ref: b.bookingId||"", start_date: b.startDate||"", end_date: b.endDate||"", full_gross: +b.fullGross||0, cleaning_fee: +b.cleaningFee||0, laundry_fees: +b.laundryFees||0, mistakes: +b.mistakes||0, spa_fee_cost: +b.spaFeeCost||0, spa_fee_charge: +b.spaFeeCharge||0, co_host_callout_cost: +b.coHostCalloutCost||0, co_host_callout_charge: +b.coHostCalloutCharge||0, city_tax: +b.cityTax||0, updated_at: new Date().toISOString() };
   }
   function dbToExpense(r) {
-    return { id: r.id, property: r.property, description: r.description, amount: +r.amount, charge: r.charge!=null?+r.charge:null, category: r.category, expenseType: r.expense_type||"", bookingId: r.booking_id, date: r.expense_date, resolved: r.resolved };
+    return { id: r.id, property: r.property, description: r.description, amount: +r.amount, charge: r.charge!=null?+r.charge:null, category: r.category, expenseType: r.expense_type||"", bookingId: r.booking_id, date: r.expense_date, resolved: r.resolved, contractor: r.contractor||"" };
   }
   function expenseToDb(e) {
-    return { id: e.id, property: e.property, description: e.description, amount: e.amount, charge: e.charge, category: e.category, expense_type: e.expenseType||"", booking_id: e.bookingId||null, expense_date: e.date||"", resolved: e.resolved||false };
+    return { id: e.id, property: e.property, description: e.description, amount: e.amount, charge: e.charge, category: e.category, expense_type: e.expenseType||"", booking_id: e.bookingId||null, expense_date: e.date||"", resolved: e.resolved||false, contractor: e.contractor||"" };
   }
 
   async function loadProperties() {
@@ -686,7 +839,7 @@ export default function App() {
   async function loadBookings(prof) {
     const p = prof || profile;
     if (!p) return;
-    let q = sb.from("bookings").select("*").order("created_at", { ascending: false });
+    let q = sb.from("bookings").select("*").eq("deleted", false).order("created_at", { ascending: false });
     if ((p.role==="cohost"||p.role==="client") && p.properties?.length) q = q.in("property", p.properties);
     const { data, error } = await q;
     if (error) { setDbError(error.message); return; }
@@ -695,7 +848,7 @@ export default function App() {
   async function loadExpenses(prof) {
     const p = prof || profile;
     if (!p) return;
-    let q = sb.from("expenses").select("*").order("created_at", { ascending: false });
+    let q = sb.from("expenses").select("*").eq("deleted", false).order("created_at", { ascending: false });
     if ((p.role==="cohost"||p.role==="client") && p.properties?.length) q = q.in("property", p.properties);
     const { data, error } = await q;
     if (error) { setDbError(error.message); return; }
@@ -746,7 +899,10 @@ export default function App() {
         const cohostCallouts = linked.filter(e => e.category === "CoHost Callout" || e.expenseType === "cohost-callout");
         const regularLinked  = linked.filter(e => e.category !== "CoHost Callout" && e.expenseType !== "cohost-callout");
         const bizCost        = sum(regularLinked.filter(e => e.expenseType === "business"), "amount");
-        const ownerCost      = sum(regularLinked.filter(e => e.expenseType === "owner"),    "amount");
+        const ownerExpenses  = regularLinked.filter(e => e.expenseType === "owner");
+        const ownerCost      = sum(ownerExpenses, "amount");
+        // Charge markup on client expenses = extra business profit (charge - cost)
+        const ownerMarkup    = sum(ownerExpenses, "charge") - ownerCost; // positive if charge > cost
         if (cohostCallouts.length) {
           const extraCost   = sum(cohostCallouts, "amount");
           const extraCharge = sum(cohostCallouts, "charge");
@@ -758,14 +914,14 @@ export default function App() {
           const recalc = calcBooking(updatedBooking, properties);
           return {
             ...recalc,
-            businessProfit: +(recalc.businessProfit - bizCost).toFixed(2),
-            ownerPayout:    +(recalc.ownerPayout    - ownerCost).toFixed(2),
+            businessProfit: +(recalc.businessProfit - bizCost + ownerMarkup).toFixed(2),
+            ownerPayout:    +(recalc.ownerPayout    - sum(ownerExpenses,"charge")).toFixed(2),
           };
         }
         return {
           ...c,
-          businessProfit: +(c.businessProfit - bizCost).toFixed(2),
-          ownerPayout:    +(c.ownerPayout    - ownerCost).toFixed(2),
+          businessProfit: +(c.businessProfit - bizCost + ownerMarkup).toFixed(2),
+          ownerPayout:    +(c.ownerPayout    - sum(ownerExpenses,"charge")).toFixed(2),
         };
       } catch(err) {
         console.error("calcBooking error for booking", b.id, err);
@@ -796,8 +952,8 @@ export default function App() {
 
   // Client sees only their own property's bookings
   const clientCalc = useMemo(() =>
-    isClient ? calc.filter(b => b.property === activeProperty) : [],
-  [calc, isClient, activeProperty]);
+    isClient ? calc.filter(b => clientProperties.includes(b.property) && (clientPropFilter === "All" || b.property === clientPropFilter)) : [],
+  [calc, isClient, JSON.stringify(clientProperties), clientPropFilter]);
 
   // CoHost sees only properties assigned to them (from users config)
   const cohostUser = useMemo(() => impersonating
@@ -812,15 +968,17 @@ export default function App() {
 
   const filtered = useMemo(() => {
     let base = isClient ? clientCalc : calc;
-    if (isCohost && impersonating?.cohostProperties) {
-      base = base.filter(b => impersonating.cohostProperties.includes(b.property));
+    // For real cohost login, filter to their assigned properties
+    if (isCohost) {
+      const cohostProps = impersonating?.cohostProperties || profile?.properties || [];
+      if (cohostProps.length) base = base.filter(b => cohostProps.includes(b.property));
     }
     return base.filter(b => {
       const propOk   = filterProp === "All" || b.property === filterProp;
       const searchOk = !search || b.guestName.toLowerCase().includes(search.toLowerCase()) || (b.bookingId || "").toLowerCase().includes(search.toLowerCase());
       return propOk && searchOk;
     });
-  }, [calc, clientCalc, isClient, isCohost, impersonating, filterProp, search]);
+  }, [calc, clientCalc, isClient, isCohost, impersonating, profile, filterProp, search]);
 
   const totals = useMemo(() => ({
     gross:   sum(filtered, "fullGross"),
@@ -829,6 +987,15 @@ export default function App() {
     owner:   sum(filtered, "ownerPayout"),
     trueNet: sum(filtered, "trueNet"),
   }), [filtered]);
+
+  // Free-standing expenses (no booking link) profit = charge - cost for client/cohost-callout types
+  const freeStandingProfit = useMemo(() =>
+    expenses.filter(e => !e.bookingId && e.expenseType).reduce((acc, e) => {
+      if (e.expenseType === "business") return acc - (+e.amount); // business cost reduces profit
+      const charge = e.charge != null ? +e.charge : +e.amount;
+      return acc + (charge - (+e.amount)); // client/callout markup adds profit
+    }, 0)
+  , [expenses]);
 
   // ── Dashboard filter options & filtered dataset (month/year/property) ──
   const MONTH_NAMES = ["01","02","03","04","05","06","07","08","09","10","11","12"];
@@ -845,49 +1012,81 @@ export default function App() {
     const propOk  = dashProp === "All" || b.property === dashProp;
     const monthOk = dashMonth === "All" || month === dashMonth;
     const yearOk  = dashYear === "All" || year === dashYear;
-    return propOk && monthOk && yearOk;
-  }), [calc, dashProp, dashMonth, dashYear]);
+    const platOk  = dashPlatform === "All" || b.platform === dashPlatform;
+    return propOk && monthOk && yearOk && platOk;
+  }), [calc, dashProp, dashMonth, dashYear, dashPlatform]);
 
-  // CoHost Callout expenses — standalone expenses categorised as "CoHost Callout"
-  // that should appear in the cohost's earnings as additional callout income
+  // Expenses that count as callout earnings for the current cohost:
+  // 1. Category "CoHost Callout" (classic flow), OR
+  // 2. Any expense where they are named as the contractor
+  const activeCohostId = impersonating ? impersonating.userId : profile?.id;
   const cohostCalloutExpenses = useMemo(() =>
-    expenses.filter(e => e.category === "CoHost Callout" && e.expenseType !== ""),
-  [expenses]);
+    expenses.filter(e => {
+      const qualifies = (e.category === "CoHost Callout" && e.expenseType !== "")
+        || (isCohost && e.contractor && e.contractor === activeCohostId && e.expenseType !== "");
+      if (!qualifies) return false;
+      // Respect dashboard filters
+      if (dashProp !== "All" && e.property !== dashProp) return false;
+      const parts = (e.date || "").split("/");
+      if (dashMonth !== "All" && parts[1] !== dashMonth) return false;
+      if (dashYear !== "All" && parts[2] !== dashYear) return false;
+      return true;
+    }),
+  [expenses, isCohost, activeCohostId, dashProp, dashMonth, dashYear]);
+
+  // Expenses filtered by the dashboard's property/month/year filters
+  const dashExpenses = useMemo(() =>
+    expenses.filter(e => {
+      if (dashProp !== "All" && e.property !== dashProp) return false;
+      const parts = (e.date || "").split("/");
+      if (dashMonth !== "All" && parts[1] !== dashMonth) return false;
+      if (dashYear !== "All" && parts[2] !== dashYear) return false;
+      return true;
+    }),
+  [expenses, dashProp, dashMonth, dashYear]);
 
   const dashByProp = useMemo(() => PROPERTY_NAMES.map(p => {
     const rows = dashFiltered.filter(b => b.property === p);
-    // calloutEarnings = coHostCalloutCost from bookings only (expenses already folded in via calc)
-    // We use the original booking coHostCalloutCost, not the recalculated one
-    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit"), owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings: sum(rows, "coHostCalloutCost") };
-  }), [dashFiltered]);
+    const extraCallouts = cohostCalloutExpenses
+      .filter(e => e.property === p && !(e.category === "CoHost Callout" && e.bookingId));
+    const calloutEarnings = sum(rows, "coHostCalloutCost") + sum(extraCallouts, "amount");
+    // Free-standing client expenses profit per property
+    const freeStandingExpProfit = expenses
+      .filter(e => e.property === p && !e.bookingId && e.expenseType && e.expenseType !== "business")
+      .reduce((acc, e) => acc + ((e.charge != null ? +e.charge : +e.amount) - +e.amount), 0);
+    return { p, count: rows.length, gross: sum(rows, "fullGross"), profit: sum(rows, "businessProfit") + freeStandingExpProfit, owner: sum(rows, "ownerPayout"), cohostEarnings: sum(rows, "cohostComm"), calloutEarnings };
+  }), [dashFiltered, cohostCalloutExpenses, expenses]);
 
-  function DashFilterBar() {
-    return (
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={dashProp} onChange={e => setDashProp(e.target.value)}
-          style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
-          <option value="All">All Properties</option>
-          {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={dashMonth} onChange={e => setDashMonth(e.target.value)}
-          style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
-          <option value="All">All Months</option>
-          {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
-        </select>
-        <select value={dashYear} onChange={e => setDashYear(e.target.value)}
-          style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
-          <option value="All">All Years</option>
-          {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        {(dashProp !== "All" || dashMonth !== "All" || dashYear !== "All") && (
-          <button onClick={() => { setDashProp("All"); setDashMonth("All"); setDashYear("All"); }}
-            style={{ padding: "8px 12px", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#F7F7F7", color: "#666666", cursor: "pointer" }}>
-            Clear filters
-          </button>
-        )}
-      </div>
-    );
-  }
+  const dashFilterBar = (
+    <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+      <select value={dashProp} onChange={e => setDashProp(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Properties</option>
+        {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+      <select value={dashPlatform} onChange={e => setDashPlatform(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Platforms</option>
+        {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+      <select value={dashMonth} onChange={e => setDashMonth(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Months</option>
+        {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+      </select>
+      <select value={dashYear} onChange={e => setDashYear(e.target.value)}
+        style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+        <option value="All">All Years</option>
+        {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
+      </select>
+      {(dashProp !== "All" || dashMonth !== "All" || dashYear !== "All" || dashPlatform !== "All") && (
+        <button onClick={() => { setDashProp("All"); setDashMonth("All"); setDashYear("All"); setDashPlatform("All"); }}
+          style={{ padding: "8px 12px", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#F7F7F7", color: "#666666", cursor: "pointer" }}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
 
   function openNew()   { setForm(EMPTY); setEditId(null); setShowForm(true); }
   function openEdit(b) { setForm({ ...b }); setEditId(b.id); setShowForm(true); }
@@ -899,17 +1098,26 @@ export default function App() {
       const { error } = await sb.from("bookings").update(bookingToDb({ ...form, id: editId })).eq("id", editId);
       if (error) { setDbError(error.message); return; }
     } else {
-      const newId = nextId(bookings);
+      const newId = nextId();
       const { error } = await sb.from("bookings").insert(bookingToDb({ ...form, id: newId }));
       if (error) { setDbError(error.message); return; }
     }
+    await loadBookings();
     closeForm();
   }
 
   async function del(id) {
-    if (!confirm("Delete this booking?")) return;
-    const { error } = await sb.from("bookings").delete().eq("id", id);
+    if (!confirm("Archive this booking? You can restore it from Settings → Archive.")) return;
+    const { error } = await sb.from("bookings").update({ deleted: true }).eq("id", id);
     if (error) setDbError(error.message);
+    await loadBookings();
+  }
+
+  async function restoreBooking(id) {
+    const { error } = await sb.from("bookings").update({ deleted: false }).eq("id", id);
+    if (error) setDbError(error.message);
+    await loadBookings();
+    loadArchived();
   }
 
   // Find the booking with the latest End Date for a given property
@@ -919,38 +1127,321 @@ export default function App() {
     return rows.reduce((latest, b) => parseDMY(b.endDate) >= parseDMY(latest.endDate) ? b : latest, rows[0]);
   }
 
+  function openEditExpense(e) {
+    setEditExpenseId(e.id);
+    setExpenseForm({
+      property: e.property || "CH",
+      description: e.description || "",
+      amount: e.amount != null ? String(e.amount) : "",
+      charge: e.charge != null ? String(e.charge) : "",
+      expenseType: e.expenseType === "cohost-callout" ? "business" : (e.expenseType || "business"),
+      category: e.category || "Maintenance",
+      date: e.date || "",
+      bookingLink: e.bookingId ? "specific" : "none",
+      bookingId: e.bookingId || "",
+      contractor: e.contractor || "",
+    });
+    setShowExpenseModal(true);
+  }
+
   async function saveExpense() {
     const amt = parseFloat(expenseForm.amount);
     if (!expenseForm.description || !amt || !expenseForm.category) return;
+    // Business expenses (owner-recorded, not CoHost Callout) are business-wide:
+    // no property, never linked to a booking
+    const isBusinessWide = !isCohost && expenseForm.expenseType === "business" && expenseForm.category !== "CoHost Callout";
     let bookingId = null;
-    if (expenseForm.bookingLink === "last") {
-      const target = lastBookingForProperty(expenseForm.property);
-      if (!target) return;
-      bookingId = target.id;
-    } else if (expenseForm.bookingLink === "specific") {
-      if (!expenseForm.bookingId) return;
-      bookingId = expenseForm.bookingId;
+    if (!isBusinessWide) {
+      if (expenseForm.bookingLink === "last") {
+        const target = lastBookingForProperty(expenseForm.property);
+        if (!target) return;
+        bookingId = target.id;
+      } else if (expenseForm.bookingLink === "specific") {
+        if (!expenseForm.bookingId) return;
+        bookingId = expenseForm.bookingId;
+      }
     }
     // CoHost Callout category always uses "cohost-callout" type regardless of toggle
     const expenseType = isCohost ? "" : (expenseForm.category === "CoHost Callout" ? "cohost-callout" : expenseForm.expenseType);
     const charge = isCohost ? null : (parseFloat(expenseForm.charge) || parseFloat(expenseForm.amount) || null);
     const newExp = {
-      id: `EXP${String(expenses.length + 1).padStart(4, "0")}`,
-      property: expenseForm.property, description: expenseForm.description,
+      id: `EXP${Date.now().toString(36).toUpperCase()}`,
+      property: isBusinessWide ? null : expenseForm.property, description: expenseForm.description,
       amount: amt, charge, category: expenseForm.category,
       date: expenseForm.date || (() => { const d = new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; })(),
       expenseType, bookingId, resolved: !isCohost,
+      contractor: expenseForm.contractor || "",
     };
-    const { error } = await sb.from("expenses").insert(expenseToDb(newExp));
-    if (error) { setDbError(error.message); return; }
+    if (editExpenseId) {
+      const orig = expenses.find(x => x.id === editExpenseId);
+      const updated = {
+        ...newExp,
+        id: editExpenseId,
+        resolved: orig ? orig.resolved : newExp.resolved,
+        // CoHosts can't see/set charge or type — preserve the originals on their edits
+        charge: isCohost ? (orig?.charge ?? null) : newExp.charge,
+        expenseType: isCohost ? (orig?.expenseType || "") : newExp.expenseType,
+      };
+      const { error } = await sb.from("expenses").update(expenseToDb(updated)).eq("id", editExpenseId);
+      if (error) { setDbError(error.message); return; }
+    } else {
+      const { error } = await sb.from("expenses").insert(expenseToDb(newExp));
+      if (error) { setDbError(error.message); return; }
+    }
+    await loadExpenses();
     setShowExpenseModal(false);
-    setExpenseForm({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "" });
+    setEditExpenseId(null);
+    setExpenseForm({ property: "CH", description: "", amount: "", charge: "", expenseType: "business", category: "Maintenance", date: "", bookingLink: "last", bookingId: "", contractor: "" });
   }
 
   async function deleteExpense(id) {
-    const { error } = await sb.from("expenses").delete().eq("id", id);
+    if (!confirm("Archive this expense? You can restore it from Settings → Archive.")) return;
+    const { error } = await sb.from("expenses").update({ deleted: true }).eq("id", id);
     if (error) setDbError(error.message);
+    await loadExpenses();
   }
+
+  async function restoreExpense(id) {
+    const { error } = await sb.from("expenses").update({ deleted: false }).eq("id", id);
+    if (error) setDbError(error.message);
+    await loadExpenses();
+    loadArchived();
+  }
+
+  // Archived records (owner only)
+  const [archivedBookings, setArchivedBookings] = useState([]);
+  const [archivedExpenses, setArchivedExpenses] = useState([]);
+  async function loadArchived() {
+    const { data: ab } = await sb.from("bookings").select("*").eq("deleted", true).order("created_at", { ascending: false });
+    const { data: ae } = await sb.from("expenses").select("*").eq("deleted", true).order("created_at", { ascending: false });
+    setArchivedBookings((ab || []).map(dbToBooking));
+    setArchivedExpenses((ae || []).map(dbToExpense));
+  }
+
+  // ── CSV EXPORT ───────────────────────────────────────────────────────────────
+  function nightsBetween(sd, ed) {
+    const p = s => { const m = (s || "").split("/"); return m.length === 3 ? new Date(+m[2], +m[1] - 1, +m[0]) : null; };
+    const a = p(sd), b = p(ed);
+    if (!a || !b || isNaN(a) || isNaN(b)) return "";
+    return Math.max(0, Math.round((b - a) / 86400000));
+  }
+  const csvEsc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  function rowsToCSV(rows) {
+    if (!rows.length) return "";
+    const headers = Object.keys(rows[0]);
+    return [headers.join(","), ...rows.map(r => headers.map(h => csvEsc(r[h])).join(","))].join("\n");
+  }
+  function downloadCSVText(filename, text) {
+    const blob = new Blob([text], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function downloadCSV(filename, rows) {
+    if (!rows.length) { alert("Nothing to export."); return; }
+    const headers = Object.keys(rows[0]);
+    const esc = csvEsc;
+    const csv = [headers.join(","), ...rows.map(r => headers.map(h => esc(r[h])).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function exportBookingsCSV(f = { property: "All", platform: "All", month: "All", year: "All" }) {
+    const rows = calc.filter(b => {
+      if (f.property !== "All" && b.property !== f.property) return false;
+      if (f.platform !== "All" && b.platform !== f.platform) return false;
+      const parts = (b.startDate || "").split("/");
+      if (f.month !== "All" && parts[1] !== f.month) return false;
+      if (f.year !== "All" && parts[2] !== f.year) return false;
+      return true;
+    });
+    rows.sort((a, b) => parseDMY(a.startDate) - parseDMY(b.startDate));
+    const bookingRows = rows.map(b => ({
+      ID: b.id, Property: b.property, Platform: b.platform, Guest: b.guestName,
+      BookingRef: b.bookingId, StartDate: b.startDate, EndDate: b.endDate,
+      Nights: nightsBetween(b.startDate, b.endDate),
+      FullGross: b.fullGross, Base: b.base, GuestFee: b.guestServiceFee, HostFee: b.hostServiceFee,
+      CityTax: b.cityTax || 0,
+      BookingPayout: b.bookingPayout, CleaningFee: b.cleaningFee, Laundry: b.laundryFees,
+      SpaCost: b.spaFeeCost || 0, SpaCharge: b.spaFeeCharge || 0,
+      CalloutCost: b.coHostCalloutCost || 0, CalloutCharge: b.coHostCalloutCharge || 0,
+      Mistakes: b.mistakes || 0,
+      TrueNet: b.trueNet, BizComm: b.businessComm, CoHostComm: b.cohostComm,
+      ClientPayout: b.ownerPayout, BizProfit: b.businessProfit,
+    }));
+    // Matching expenses (same property/month/year — expenses have no platform)
+    const expRows = expenses.filter(e => {
+      if (f.property !== "All" && e.property !== f.property) return false;
+      const parts = (e.date || "").split("/");
+      if (f.month !== "All" && parts[1] !== f.month) return false;
+      if (f.year !== "All" && parts[2] !== f.year) return false;
+      return true;
+    }).sort((a, b) => parseDMY(a.date) - parseDMY(b.date)).map(e => ({
+      ID: e.id, Property: e.property || "Business-wide", Description: e.description, Category: e.category,
+      Cost: e.amount, Charge: e.charge ?? e.amount,
+      Markup: +(((e.charge != null ? +e.charge : +e.amount) - +e.amount)).toFixed(2),
+      Type: e.expenseType || "pending",
+      Contractor: e.contractor ? (users.find(u => u.id === e.contractor)?.name || "CoHost") : "External/N-A",
+      Date: e.date, LinkedBooking: e.bookingId || "free-standing",
+    }));
+    if (!bookingRows.length && !expRows.length) { alert("Nothing to export."); return; }
+    const text = "BOOKINGS\n" + rowsToCSV(bookingRows)
+      + (expRows.length ? "\n\nEXPENSES\n" + rowsToCSV(expRows) : "");
+    downloadCSVText(`guestfavourite-export-${new Date().toISOString().slice(0,10)}.csv`, text);
+  }
+  function exportExpensesCSV() {
+    downloadCSV(`guestfavourite-expenses-${new Date().toISOString().slice(0,10)}.csv`,
+      expenses.map(e => ({
+        ID: e.id, Property: e.property || "Business-wide", Description: e.description, Category: e.category,
+        Cost: e.amount, Charge: e.charge ?? e.amount,
+        Markup: +(((e.charge != null ? +e.charge : +e.amount) - +e.amount)).toFixed(2),
+        Type: e.expenseType || "pending",
+        Contractor: e.contractor ? (users.find(u => u.id === e.contractor)?.name || "CoHost") : "External/N-A",
+        Date: e.date, LinkedBooking: e.bookingId || "free-standing",
+      })));
+  }
+
+  // ── CLIENT STATEMENT (printable, save as PDF via browser) ────────────────────
+  function generateStatement(property, month, year, platform = "All") {
+    const allProps = property === "All";
+    const rows = calc.filter(b => {
+      if (!allProps && b.property !== property) return false;
+      if (platform !== "All" && b.platform !== platform) return false;
+      const parts = (b.startDate || "").split("/");
+      if (month !== "All" && parts[1] !== month) return false;
+      if (year !== "All" && parts[2] !== year) return false;
+      return true;
+    });
+    const propExpensesAll = expenses.filter(e => {
+      if (e.expenseType !== "owner") return false;
+      if (!allProps && e.property !== property) return false;
+      if (allProps && !e.property) return false;
+      const parts = (e.date || "").split("/");
+      if (month !== "All" && parts[1] !== month) return false;
+      if (year !== "All" && parts[2] !== year) return false;
+      return true;
+    });
+    // Only free-standing charges are deducted separately — booking-linked ones already sit inside payouts
+    const propExpenses = propExpensesAll.filter(e => !e.bookingId);
+    // Chronological order for the document
+    rows.sort((a, b) => parseDMY(a.startDate) - parseDMY(b.startDate));
+    propExpensesAll.sort((a, b) => parseDMY(a.date) - parseDMY(b.date));
+    const clientUser = allProps ? null : users.find(u => u.role === "client" && u.properties?.includes(property));
+    const periodLabel = `${month === "All" ? "All months" : MONTH_LABELS[month]} ${year === "All" ? "" : year}${platform !== "All" ? " · " + platform + " only" : ""}`.trim();
+    const totGross = sum(rows, "fullGross"), totPayout = sum(rows, "ownerPayout");
+    const totExpCharge = propExpenses.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
+    const totNights = rows.reduce((a, b) => a + (+nightsBetween(b.startDate, b.endDate) || 0), 0);
+    // Only include columns that carry data anywhere in the period
+    const hasLaundry = rows.some(b => (parseFloat(b.laundryFees)||0) > 0);
+    const hasSpa     = rows.some(b => (parseFloat(b.spaFeeCharge)||0) > 0);
+    const hasCallout = rows.some(b => (parseFloat(b.coHostCalloutCharge)||0) > 0);
+    const hasCityTax = rows.some(b => (parseFloat(b.cityTax)||0) > 0);
+    const money = v => `£${(+v||0).toFixed(2)}`;
+    const headCells = [
+      "ID", ...(allProps ? ["Property"] : []), "Platform", "Guest", "Dates", "Nights",
+      "Gross", "Channel Fee", "Service Fee", "Cleaning",
+      ...(hasLaundry ? ["Laundry"] : []), ...(hasSpa ? ["Spa"] : []),
+      ...(hasCallout ? ["Callout"] : []), ...(hasCityTax ? ["City Tax"] : []),
+      "Mgmt Fee", allProps ? "Client Payout" : "Your Payout",
+    ];
+    const colCount = headCells.length;
+    const rowsHtml = rows.map(b => `
+      <tr>
+        <td>${b.id}</td>${allProps ? `<td><strong>${b.property}</strong></td>` : ""}<td>${b.platform}</td><td>${b.guestName}</td>
+        <td class="nowrap">${b.startDate} → ${b.endDate}</td>
+        <td class="num">${nightsBetween(b.startDate, b.endDate)}</td>
+        <td class="num">${money(b.fullGross)}</td>
+        <td class="num">${money(b.hostServiceFee)}</td>
+        <td class="num">${money(b.guestServiceFee)}</td>
+        <td class="num">${money(b.cleaningFee)}</td>
+        ${hasLaundry ? `<td class="num">${money(b.laundryFees)}</td>` : ""}
+        ${hasSpa ? `<td class="num">${money(b.spaFeeCharge)}</td>` : ""}
+        ${hasCallout ? `<td class="num">${money(b.coHostCalloutCharge)}</td>` : ""}
+        ${hasCityTax ? `<td class="num">${money(b.cityTax)}</td>` : ""}
+        <td class="num">${money(b.businessComm)}</td>
+        <td class="num strong">${money(b.ownerPayout)}</td>
+      </tr>`).join("");
+    const totalsRow = `
+      <tr class="totrow">
+        <td colspan="${allProps ? 5 : 4}"><strong>TOTALS (${rows.length})</strong></td>
+        <td class="num"><strong>${totNights}</strong></td>
+        <td class="num"><strong>${money(totGross)}</strong></td>
+        <td class="num"><strong>${money(sum(rows,"hostServiceFee"))}</strong></td>
+        <td class="num"><strong>${money(sum(rows,"guestServiceFee"))}</strong></td>
+        <td class="num"><strong>${money(sum(rows,"cleaningFee"))}</strong></td>
+        ${hasLaundry ? `<td class="num"><strong>${money(sum(rows,"laundryFees"))}</strong></td>` : ""}
+        ${hasSpa ? `<td class="num"><strong>${money(sum(rows,"spaFeeCharge"))}</strong></td>` : ""}
+        ${hasCallout ? `<td class="num"><strong>${money(sum(rows,"coHostCalloutCharge"))}</strong></td>` : ""}
+        ${hasCityTax ? `<td class="num"><strong>${money(sum(rows,"cityTax"))}</strong></td>` : ""}
+        <td class="num"><strong>${money(sum(rows,"businessComm"))}</strong></td>
+        <td class="num strong"><strong>${money(totPayout)}</strong></td>
+      </tr>`;
+    // Per-property subtotal section (All Properties only)
+    const byPropHtml = allProps ? `
+      <h3>By Property</h3>
+      <table><thead><tr><th>Property</th><th>Client</th><th class="num">Bookings</th><th class="num">Nights</th><th class="num">Gross</th><th class="num">Total Fees</th><th class="num">Expenses Charged</th><th class="num">Net Payout</th></tr></thead>
+      <tbody>${PROPERTY_NAMES.map(p => {
+        const pr = rows.filter(b => b.property === p);
+        if (!pr.length) return "";
+        const pe = propExpenses.filter(e => e.property === p);
+        const peCharge = pe.reduce((a, e) => a + (e.charge != null ? +e.charge : +e.amount), 0);
+        const pGross = sum(pr, "fullGross"), pPayout = sum(pr, "ownerPayout");
+        const pNights = pr.reduce((a, b) => a + (+nightsBetween(b.startDate, b.endDate) || 0), 0);
+        const cu = users.find(u => u.role === "client" && u.properties?.includes(p));
+        return `<tr><td><strong>${p}</strong></td><td>${cu ? cu.name : "—"}</td><td class="num">${pr.length}</td><td class="num">${pNights}</td><td class="num">${money(pGross)}</td><td class="num">${money(pGross - pPayout)}</td><td class="num">${peCharge ? money(peCharge) : "—"}</td><td class="num strong">${money(pPayout - peCharge)}</td></tr>`;
+      }).join("")}</tbody></table>` : "";
+    const expHtml = propExpensesAll.length ? `
+      <h3>Expenses charged this period</h3>
+      <table><thead><tr>${allProps ? "<th>Property</th>" : ""}<th>Description</th><th>Category</th><th>Date</th><th class="num">Amount</th></tr></thead>
+      <tbody>${propExpensesAll.map(e => `<tr>${allProps ? `<td><strong>${e.property || ""}</strong></td>` : ""}<td>${e.description}${e.bookingId ? ` <span style="color:#999;font-size:10px">(deducted within booking ${e.bookingId})</span>` : ""}</td><td>${e.category}</td><td>${e.date}</td><td class="num">${money(e.charge != null ? e.charge : e.amount)}</td></tr>`).join("")}</tbody></table>` : "";
+    const w = window.open("", "_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Statement — ${allProps ? "All Properties" : property} — ${periodLabel}</title>
+      <style>
+        body { font-family: 'Barlow', -apple-system, sans-serif; color: #0D0D0D; padding: 32px; max-width: 1000px; margin: 0 auto; }
+        .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #E61C5D; padding-bottom: 16px; margin-bottom: 24px; }
+        .brand { font-weight: 900; font-size: 26px; letter-spacing: -0.5px; }
+        .brand .dot { color: #E61C5D; }
+        h2 { font-size: 18px; margin: 4px 0; } h3 { font-size: 14px; margin: 24px 0 8px; }
+        .meta { color: #666; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11px; }
+        th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; padding: 6px 5px; border-bottom: 2px solid #eee; }
+        td { padding: 6px 5px; border-bottom: 1px solid #f3f3f3; }
+        .num { text-align: right; } .strong { font-weight: 700; } .nowrap { white-space: nowrap; }
+        .totrow td { background: #fafafa; border-top: 2px solid #e8e8e8; }
+        .totals { margin-top: 24px; background: #fafafa; border-radius: 10px; padding: 16px 20px; }
+        .totals div { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+        .totals .final { font-weight: 800; font-size: 18px; color: #E61C5D; border-top: 2px solid #eee; padding-top: 8px; margin-top: 8px; }
+        .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; }
+        @media print { body { padding: 16px; } table { font-size: 10px; } }
+      </style></head><body>
+      <div class="head">
+        <div><div class="brand">GuestFavour<span class="dot">i</span>te</div><div class="meta">Property Management</div></div>
+        <div style="text-align:right"><h2>${allProps ? "Monthly Summary Statement" : "Client Statement"}</h2><div class="meta">${allProps ? "All Properties" : property} · ${periodLabel}</div>
+        ${clientUser ? `<div class="meta">${clientUser.name}</div>` : ""}</div>
+      </div>
+      <table><thead><tr>${headCells.map(h => `<th${["Gross","Channel Fee","Service Fee","Cleaning","Laundry","Spa","Callout","City Tax","Mgmt Fee","Client Payout","Your Payout","Nights"].includes(h) ? ' class="num"' : ""}>${h}</th>`).join("")}</tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan="${colCount}" style="text-align:center;color:#999">No bookings this period</td></tr>`}${rows.length ? totalsRow : ""}</tbody></table>
+      ${byPropHtml}
+      ${expHtml}
+      <div class="totals">
+        <div><span>Total Gross</span><span>${money(totGross)}</span></div>
+        <div><span>Total Nights</span><span>${totNights}</span></div>
+        <div><span>Total Fees & Deductions</span><span>${money(totGross - totPayout)}</span></div>
+        <div><span>Total Booking Payout</span><span>${money(totPayout)}</span></div>
+        ${totExpCharge ? `<div><span>Expenses Charged</span><span>−${money(totExpCharge)}</span></div>` : ""}
+        <div class="final"><span>Net Payout</span><span>${money(totPayout - totExpCharge)}</span></div>
+      </div>
+      <div class="footer">Generated ${new Date().toLocaleDateString("en-GB")} · GuestFavourite · guestfavourite.co.uk</div>
+      <script>window.print()</script></body></html>`);
+    w.document.close();
+  }
+
+
 
   function resolveIssue(issue) {
     if (issue.type === "expense") { setResolveExpenseId(issue.expense.id); setResolveChargeInput(""); }
@@ -964,6 +1455,7 @@ export default function App() {
     const updated = { ...exp, expenseType, charge: isNaN(charge) ? exp.amount : charge, resolved: true };
     const { error } = await sb.from("expenses").update(expenseToDb(updated)).eq("id", expenseId);
     if (error) setDbError(error.message);
+    await loadExpenses();
     setResolveExpenseId(null); setResolveChargeInput("");
   }
 
@@ -1003,7 +1495,7 @@ export default function App() {
     </div>
   );
 
-  const navTabs = ["bookings", "dashboard", "expenses", ...(!isCohost && !isClient ? ["settings"] : [])].filter(t => {
+  const navTabs = ["bookings", "calendar", "dashboard", "expenses", ...(!isCohost && !isClient ? ["settings"] : [])].filter(t => {
     if (t === "expenses" && isCohost) return false;
     return true;
   });
@@ -1125,7 +1617,7 @@ export default function App() {
         </div>
       )}
 
-      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(14px, 4vw, 28px)" }}>
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "clamp(14px, 4vw, 28px)", position: "relative", zIndex: 1 }}>
 
         {/* BOOKINGS */}
         {tab === "bookings" && (
@@ -1149,10 +1641,10 @@ export default function App() {
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 12, color: "#666", flex: 1 }}>
                     {filtered.length} bookings
-                    {!isCohost && !isClient && <><br/><strong style={{ color: "#16a34a" }}>{fmt(totals.profit)}</strong> profit</>}
+                    {!isCohost && !isClient && <><br/><strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong> profit</>}
                   </span>
                   {!isClient && (
-                    <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }}
+                    <button onClick={() => { setExpenseForm(f => ({ ...f, property: "CH", description: "", amount: "", charge: "", contractor: isCohost ? (impersonating?.userId || profile?.id || "") : "" })); setShowExpenseModal(true); }}
                       style={{ padding: "9px 12px", borderRadius: 8, border: "none", background: "#f97316", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
                       + Expense
                     </button>
@@ -1172,11 +1664,22 @@ export default function App() {
                 {!isClient && <select value={filterProp} onChange={e => setFilterProp(e.target.value)}
                   style={{ padding: "9px 14px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
                   <option value="All">All Properties</option>
-                  {PROPERTY_NAMES.map(p => <option key={p}>{p}{!PROPERTIES[p].live ? " (not live)" : ""}</option>)}
+                  {(isCohost ? (impersonating?.cohostProperties || profile?.properties || PROPERTY_NAMES) : PROPERTY_NAMES).map(p => <option key={p}>{p}{!PROPERTIES[p]?.live ? " (not live)" : ""}</option>)}
                 </select>}
-                <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
-                  <span style={{ fontSize: 13, color: "#666666" }}>{filtered.length} bookings{!isCohost && !isClient && <> · Profit: <strong style={{ color: "#16a34a" }}>{fmt(totals.profit)}</strong></>}</span>
-                  {!isClient && <button onClick={() => { setExpenseForm({ property: "CH", description: "", amount: "" }); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
+                {isClient && clientProperties.length > 1 && <select value={clientPropFilter} onChange={e => setClientPropFilter(e.target.value)}
+                  style={{ padding: "9px 14px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+                  <option value="All">All My Properties</option>
+                  {clientProperties.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, color: "#666666" }}>{filtered.length} bookings{!isCohost && !isClient && <> · Profit: <strong style={{ color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</strong></>}</span>
+                  {!isCohost && !isClient && (
+                    <>
+                      <button onClick={() => setShowStatementModal(true)} style={{ ...btn("#7c3aed", "#fff", false), padding: "10px 14px" }}>📄 Statement</button>
+                      <button onClick={() => setShowCSVModal(true)} style={{ ...btn("#0D0D0D", "#fff", false), padding: "10px 14px" }}>⬇ CSV</button>
+                    </>
+                  )}
+                  {!isClient && <button onClick={() => { setExpenseForm(f => ({ ...f, property: "CH", description: "", amount: "", charge: "", contractor: isCohost ? (impersonating?.userId || profile?.id || "") : "" })); setShowExpenseModal(true); }} style={btn("#f97316", "#fff", false)}>+ Add Expense / Callout</button>}
                   {!isClient && <button onClick={openNew} style={btn("#E61C5D", "#fff", false)}>+ New Booking</button>}
                 </div>
               </div>
@@ -1198,9 +1701,9 @@ export default function App() {
               /* ── MOBILE: booking cards ── */
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {filtered.map(b => {
-                  const platColor = b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D";
+                  const platColor = b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D";
                   return (
-                    <div key={b.id} style={{ background: "#FFFFFF", borderRadius: 12, border: "1px solid #F0F0F0", boxShadow: "0 2px 6px rgba(0,0,0,0.05)", padding: 16 }}>
+                    <div key={b.id} onClick={() => setDetailBookingId(b.id)} style={{ background: "#FFFFFF", borderRadius: 12, border: "1px solid #F0F0F0", boxShadow: "0 2px 6px rgba(0,0,0,0.05)", padding: 16, cursor: "pointer" }}>
                       {/* Card header */}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                         <div>
@@ -1244,9 +1747,9 @@ export default function App() {
                       {/* Actions */}
                       {!isClient && (
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={() => { setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ flex: 1, background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Invoice</button>
-                          <button onClick={() => openEdit(b)} style={{ flex: 1, background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Edit</button>
-                          <button onClick={() => del(b.id)} style={{ flex: 1, background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Delete</button>
+                          <button onClick={e => { e.stopPropagation(); setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ flex: 1, background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Invoice</button>
+                          <button onClick={e => { e.stopPropagation(); openEdit(b); }} style={{ flex: 1, background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Edit</button>
+                          <button onClick={e => { e.stopPropagation(); del(b.id); }} style={{ flex: 1, background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 8, padding: "8px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Delete</button>
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
@@ -1261,14 +1764,14 @@ export default function App() {
               </div>
             ) : (
               <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
-                <div style={{ overflowX: "auto" }}>
+                <div style={{ overflow: "auto", maxHeight: "calc(100vh - 240px)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead style={{ background: "#F9F9F9" }}>
+                    <thead style={{ background: "#F9F9F9", position: "sticky", top: 0, zIndex: 2 }}>
                       <tr>
                         {(isClient
-                          ? ["ID","Platform","Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
+                          ? ["ID","Platform",...(clientProperties.length > 1 ? ["Property"] : []),"Guest","Dates","Full Gross","Channel Fee","Service Fee","Cleaning Fee","Laundry","Spa Charge","Callout Charge","Mgmt Fee","Client Payout"]
                           : isCohost
-                            ? ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","CoHost Comm","Client Payout",""]
+                            ? ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","CoHost Comm","Callout","Client Payout",""]
                             : ["ID","Property","Platform","Guest","Dates","Full Gross","Base","Guest Fee","Host Fee","Booking Payout","True Net","Biz Comm","CoHost Comm","Client Payout","Biz Profit",""]
                         ).map(h => (
                           <th key={h} style={th}>{h}</th>
@@ -1277,11 +1780,12 @@ export default function App() {
                     </thead>
                     <tbody>
                       {filtered.map(b => (
-                        <tr key={b.id} style={{ background: "#FFFFFF" }}>
+                        <tr key={b.id} onClick={() => setDetailBookingId(b.id)} style={{ background: "#FFFFFF", cursor: "pointer" }} title="Click for full breakdown">
                           {isClient ? (
                             <>
                               <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
-                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
+                              {clientProperties.length > 1 && <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>}
                               <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                               <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                               <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -1298,7 +1802,7 @@ export default function App() {
                             <>
                               <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
                               <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
-                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                              <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
                               <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                               <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                               <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -1309,26 +1813,27 @@ export default function App() {
                               {!isCohost && <td style={{ ...td, color: "#7c3aed" }}>{fmt(b.trueNet)}</td>}
                               {!isCohost && <td style={{ ...td, color: "#8b5cf6", fontWeight: 700 }}>{fmt(b.businessComm)}</td>}
                               <td style={{ ...td, color: "#db2777" }}>{fmt(b.cohostComm)}</td>
+                              {isCohost && <td style={{ ...td, color: "#f97316" }}>{(parseFloat(b.coHostCalloutCost)||0) > 0 ? fmt(b.coHostCalloutCost) : "—"}</td>}
                               <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(b.ownerPayout)}</td>
                               {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(b.businessProfit)}</td>}
                               <td style={{ ...td, whiteSpace: "nowrap" }}>
                                 {attachmentCounts[b.id] > 0 && (
                                   <span title={`${attachmentCounts[b.id]} attachment(s)`} style={{ marginRight: 6, fontSize: 11, color: "#666" }}>📎{attachmentCounts[b.id]}</span>
                                 )}
-                                <button onClick={() => { setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Invoice</button>
-                                <button onClick={() => openEdit(b)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button>
-                                <button onClick={() => del(b.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
+                                <button onClick={e => { e.stopPropagation(); setInvoice(b); setEmailTo(""); setEmailSent(false); }} style={{ background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Invoice</button>
+                                <button onClick={e => { e.stopPropagation(); openEdit(b); }} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11, marginRight: 4 }}>Edit</button>
+                                <button onClick={e => { e.stopPropagation(); del(b.id); }} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
                               </td>
                             </>
                           )}
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
+                    <tfoot style={{ position: "sticky", bottom: 0, zIndex: 2 }}>
                       <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                         {isClient ? (
                           <>
-                            <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTALS ({filtered.length})</td>
+                            <td colSpan={4 + (clientProperties.length > 1 ? 1 : 0)} style={{ ...td, fontWeight: 700 }}>TOTALS ({filtered.length})</td>
                             <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.gross)}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"hostServiceFee"))}</td>
                             <td style={{ ...td, fontWeight: 700, color: "#64748b" }}>{fmt(sum(filtered,"guestServiceFee"))}</td>
@@ -1348,8 +1853,9 @@ export default function App() {
                             {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#7c3aed" }}>{fmt(totals.trueNet)}</td>}
                             {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(filtered,"businessComm"))}</td>}
                             <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(filtered,"cohostComm"))}</td>
+                            {isCohost && <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(filtered,"coHostCalloutCost"))}</td>}
                             <td style={{ ...td, fontWeight: 700, color: "#059669" }}>{fmt(totals.owner)}</td>
-                            {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(totals.profit)}</td>}
+                            {!isCohost && <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(totals.profit + freeStandingProfit)}</td>}
                             <td />
                           </>
                         )}
@@ -1364,14 +1870,16 @@ export default function App() {
               <>
                 <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginTop: 28, marginBottom: 14, fontSize: 15 }}>Recorded Expenses</h3>
                 <div style={{ fontSize: 12, color: "#999999", marginBottom: 12 }}>
-                  Business Expenses reduce business profit · Client Expenses reduce that property's client payout · CoHost Callout: profit = charge − cost
+                  {isCohost
+                    ? "Your recorded expenses — cost is what you spent, type shows how it's classified."
+                    : "Business Expenses reduce business profit · Client Expenses reduce that property's client payout · CoHost Callout: profit = charge − cost"}
                 </div>
                 <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead style={{ background: "#F9F9F9" }}>
                         <tr>
-                          {["Property","Description","Cost","Charge","Type","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
+                          {["Property","Description","Cost",...(!isCohost ? ["Charge"] : []),"Type","Contractor","Allocated To",""].map(h => <th key={h} style={th}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -1383,14 +1891,15 @@ export default function App() {
                           const typeCol   = e.expenseType === "business" ? "#8b5cf6" : e.expenseType === "owner" ? "#0891b2" : e.expenseType === "cohost-callout" ? "#f97316" : "#f59e0b";
                           return (
                             <tr key={e.id} style={{ background: "#FFFFFF" }}>
-                              <td style={td}><Tag label={e.property} color={propColor(e.property)} /></td>
+                              <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
                               <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
                               <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(e.amount)}</td>
-                              <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>
+                              {!isCohost && <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>}
                               <td style={td}><Tag label={typeLabel} color={typeCol} /></td>
+                              <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.contractor ? (users.find(u => u.id === e.contractor)?.name || (e.contractor === (impersonating?.userId || profile?.id) ? "You" : "CoHost")) : "—"}</td>
                               <td style={{ ...td, color: "#666666", fontSize: 12 }}>{b ? `${b.id} (${b.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
                               <td style={td}>
-                                <button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button>
+                                <div style={{ display: "flex", gap: 4, whiteSpace: "nowrap" }}><button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></div>
                               </td>
                             </tr>
                           );
@@ -1403,6 +1912,126 @@ export default function App() {
             )}
           </>
         )}
+
+        {/* CALENDAR — all roles */}
+        {tab === "calendar" && (() => {
+          // Role-appropriate booking source
+          const cohostProps = impersonating?.cohostProperties || (isCohost ? (profile?.properties || []) : []);
+          const source = isClient
+            ? clientCalc
+            : isCohost
+              ? calc.filter(b => !cohostProps.length || cohostProps.includes(b.property))
+              : calc;
+          const visible = source.filter(b =>
+            (calProp === "All" || b.property === calProp) &&
+            (calPlatform === "All" || b.platform === calPlatform)
+          );
+          // Property options depend on role
+          const propOptions = isClient ? clientProperties : (isCohost ? (cohostProps.length ? cohostProps : PROPERTY_NAMES) : PROPERTY_NAMES);
+          // Build the month grid — weeks start Monday
+          const firstOfMonth = new Date(calYear, calMonth, 1);
+          const startOffset = (firstOfMonth.getDay() + 6) % 7; // Mon=0
+          const gridStart = new Date(calYear, calMonth, 1 - startOffset);
+          const cells = Array.from({ length: 42 }, (_, i) => {
+            const d = new Date(gridStart);
+            d.setDate(gridStart.getDate() + i);
+            return d;
+          });
+          const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+          const today = new Date();
+          const monthLabel = firstOfMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+          // parseDMY returns YYYYMMDD as an integer — compare cell dates the same way
+          const dayInt = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+          const bookingsOn = d => visible.filter(b => {
+            const s = parseDMY(b.startDate), e = parseDMY(b.endDate);
+            if (!s || !e) return false;
+            const di = dayInt(d);
+            return di >= s && di <= e;
+          });
+          const prevMonth = () => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); };
+          const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); };
+          return (
+            <div>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Calendar</h2>
+
+              {/* Controls */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <button onClick={prevMonth} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontWeight: 800 }}>←</button>
+                  <div style={{ fontWeight: 800, fontSize: 15, minWidth: 150, textAlign: "center" }}>{monthLabel}</div>
+                  <button onClick={nextMonth} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontWeight: 800 }}>→</button>
+                  <button onClick={() => { setCalMonth(today.getMonth()); setCalYear(today.getFullYear()); }} style={{ background: "#0D0D0D", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Today</button>
+                </div>
+                {propOptions.length > 1 && (
+                  <select value={calProp} onChange={e => setCalProp(e.target.value)}
+                    style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+                    <option value="All">{isClient ? "All My Properties" : "All Properties"}</option>
+                    {propOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                )}
+                <select value={calPlatform} onChange={e => setCalPlatform(e.target.value)}
+                  style={{ padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" }}>
+                  <option value="All">All Platforms</option>
+                  {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                {(calProp !== "All" || calPlatform !== "All") && (
+                  <button onClick={() => { setCalProp("All"); setCalPlatform("All"); }}
+                    style={{ padding: "8px 12px", border: "none", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#F7F7F7", color: "#666666", cursor: "pointer" }}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
+
+              {/* Property legend */}
+              {!isClient && (
+                <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                  {propOptions.map(p => (
+                    <div key={p} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: "#666" }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: propColor(p), display: "inline-block" }} />{p}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Grid */}
+              <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1px solid #F0F0F0", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", background: "#F9F9F9", borderBottom: "2px solid #F0F0F0" }}>
+                  {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d => (
+                    <div key={d} style={{ padding: "8px 4px", textAlign: "center", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#999" }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+                  {cells.map((d, i) => {
+                    const inMonth = d.getMonth() === calMonth;
+                    const isToday = sameDay(d, today);
+                    const dayBookings = bookingsOn(d);
+                    return (
+                      <div key={i} style={{ minHeight: isMobile ? 74 : 100, borderRight: (i % 7) < 6 ? "1px solid #F5F5F5" : "none", borderBottom: i < 35 ? "1px solid #F5F5F5" : "none", padding: 4, background: inMonth ? "#fff" : "#FBFBFB", overflow: "hidden" }}>
+                        <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? "#fff" : inMonth ? "#555" : "#ccc", background: isToday ? "#E61C5D" : "transparent", width: 20, height: 20, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 3 }}>
+                          {d.getDate()}
+                        </div>
+                        {dayBookings.slice(0, isMobile ? 2 : 3).map(b => {
+                          const isStart = parseDMY(b.startDate) === dayInt(d);
+                          return (
+                            <div key={b.id} onClick={() => setDetailBookingId(b.id)}
+                              title={`${b.guestName} · ${b.property} · ${b.startDate} → ${b.endDate}`}
+                              style={{ background: propColor(b.property), color: "#fff", borderRadius: 4, padding: "2px 5px", fontSize: 9.5, fontWeight: 700, marginBottom: 2, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", opacity: inMonth ? 1 : 0.55 }}>
+                              {isStart ? `▸ ${b.guestName}` : b.guestName}
+                            </div>
+                          );
+                        })}
+                        {dayBookings.length > (isMobile ? 2 : 3) && (
+                          <div style={{ fontSize: 9, color: "#999", fontWeight: 700 }}>+{dayBookings.length - (isMobile ? 2 : 3)} more</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "#999", marginTop: 10 }}>▸ marks check-in day · tap a booking for the full breakdown</div>
+            </div>
+          );
+        })()}
 
         {/* CLIENT DASHBOARD */}
         {tab === "dashboard" && isClient && (() => {
@@ -1417,21 +2046,30 @@ export default function App() {
             return (cdMonth === "All" || parts[1] === cdMonth)
                 && (cdYear  === "All" || parts[2] === cdYear);
           });
-          const clientExpenses = expenses.filter(e =>
-            e.property === clientProperty && e.expenseType === "owner" && e.charge != null
+          const clientExpensesAll = expenses.filter(e =>
+            e.property && clientProperties.includes(e.property) && (clientPropFilter === "All" || e.property === clientPropFilter) && e.expenseType === "owner" && e.charge != null
           ).filter(e => {
             const parts = (e.date||"").split("/");
             return (cdMonth === "All" || parts[1] === cdMonth)
                 && (cdYear  === "All" || parts[2] === cdYear);
           });
+          // Booking-linked expenses are already deducted inside that booking's payout —
+          // only free-standing ones are subtracted separately (prevents double counting)
+          const clientExpenses = clientExpensesAll.filter(e => !e.bookingId);
           const selSty = { padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" };
           const hasFilters = cdMonth !== "All" || cdYear !== "All";
           return (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>My Earnings — {clientProperty}</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>My Earnings — {activeProperty}</h2>
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+                {clientProperties.length > 1 && (
+                  <select value={clientPropFilter} onChange={e => setClientPropFilter(e.target.value)} style={selSty}>
+                    <option value="All">All My Properties</option>
+                    {clientProperties.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                )}
                 <select value={cdMonth} onChange={e => cdMonthSet(e.target.value)} style={selSty}>
                   <option value="All">All Months</option>
                   {MONTH_NAMES_C.map(m => <option key={m} value={m}>{MONTH_LABELS_C[m]}</option>)}
@@ -1451,7 +2089,7 @@ export default function App() {
               {clientCalc.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                   <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "#555555" }}>No bookings recorded yet for {clientProperty}</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#555555" }}>No bookings recorded yet for {activeProperty}</div>
                 </div>
               ) : cdFiltered.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
@@ -1467,16 +2105,50 @@ export default function App() {
                       { label: "Total Gross",        value: fmt(sum(cdFiltered,"fullGross")),            icon: "💷", color: "#2563eb" },
                       { label: "Total Fees",      value: fmt(sum(cdFiltered,"fullGross") - sum(cdFiltered,"ownerPayout")), icon: "💳", color: "#f97316" },
                       { label: "Client Payout",      value: fmt(sum(cdFiltered,"ownerPayout")),          icon: "💰", color: "#059669" },
-                      { label: "Client Expenses",    value: fmt(sum(clientExpenses,"charge")),           icon: "💸", color: "#f97316" },
+                      { label: "Client Expenses",    value: fmt(sum(clientExpenses,"charge")),           icon: "💸", color: "#f97316", clickable: true },
                       { label: "Net After Expenses", value: fmt(sum(cdFiltered,"ownerPayout") - sum(clientExpenses,"charge")), icon: "✅", color: "#16a34a" },
                     ].map(k => (
-                      <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
+                      <div key={k.label}
+                        onClick={k.clickable ? () => setShowExpenseBreakdown(v => !v) : undefined}
+                        style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                         <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                        <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+                        <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}{k.clickable && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}</div>
                         <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                       </div>
                     ))}
                   </div>
+
+                  {/* Client expense breakdown panel */}
+                  {showExpenseBreakdown && (
+                    <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>💸 Your Expense Breakdown</div>
+                      {clientExpensesAll.length === 0 ? (
+                        <div style={{ fontSize: 13, color: "#999" }}>No expenses charged in this period.</div>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>{["Date","Category","Description","Charge"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                          </thead>
+                          <tbody>
+                            {clientExpensesAll.map(e => (
+                              <tr key={e.id}>
+                                <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{e.date || "—"}</td>
+                                <td style={td}><Tag label={e.category} color="#f97316" /></td>
+                                <td style={{ ...td, fontWeight: 600 }}>{e.description}{e.bookingId && <span style={{ fontSize: 10, color: "#999", fontWeight: 400 }}> — already deducted in booking {e.bookingId}</span>}</td>
+                                <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(e.charge != null ? e.charge : e.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={3} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(clientExpenses,"charge"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      )}
+                    </div>
+                  )}
 
                   {/* Per-booking breakdown */}
                   <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>Booking Breakdown</h3>
@@ -1491,7 +2163,7 @@ export default function App() {
                             return (
                               <tr key={b.id} style={{ background: "#FFFFFF" }}>
                                 <td style={{ ...td, fontWeight: 700, color: "#999999", fontSize: 11 }}>{b.id}</td>
-                                <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : "#E61C5D"} /></td>
+                                <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
                                 <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
                                 <td style={{ ...td, color: "#666666", whiteSpace: "nowrap", fontSize: 12 }}>{b.startDate} → {b.endDate}</td>
                                 <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
@@ -1526,7 +2198,7 @@ export default function App() {
                   </div>
 
                   {/* Client expenses charged to them */}
-                  {clientExpenses.length > 0 && (
+                  {clientExpensesAll.length > 0 && (
                     <>
                       <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>Expenses Charged to You</h3>
                       <div style={{ background: "#FFFFFF", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", overflow: "hidden" }}>
@@ -1536,7 +2208,7 @@ export default function App() {
                               <tr>{["Date","Category","Description","Charge"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
                             </thead>
                             <tbody>
-                              {clientExpenses.map(e => (
+                              {clientExpensesAll.map(e => (
                                 <tr key={e.id} style={{ background: "#FFFFFF" }}>
                                   <td style={{ ...td, color: "#666666", fontSize: 12 }}>{e.date || "—"}</td>
                                   <td style={td}><Tag label={e.category || "—"} color={{ Maintenance:"#f97316",Callout:"#ef4444",Hamper:"#8b5cf6",Replenishables:"#0891b2",Other:"#64748b" }[e.category] || "#64748b"} /></td>
@@ -1573,7 +2245,7 @@ export default function App() {
               </div>
             ) : (
               <>
-                <DashFilterBar />
+                {dashFilterBar}
                 {dashFiltered.length === 0 ? (
                   <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                     <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
@@ -1585,16 +2257,53 @@ export default function App() {
                       {[
                         { label: "Bookings",            value: dashFiltered.length,                                                          icon: "📋", color: "#0D0D0D" },
                         { label: "Commission Earnings", value: fmt(sum(dashFiltered,"cohostComm")),                                          icon: "📊", color: "#8b5cf6" },
-                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost")),  icon: "🔧", color: "#f97316" },
-                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost")), icon: "💰", color: "#db2777" },
+                        { label: "Callout Earnings",    value: fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")),  icon: "🔧", color: "#f97316", clickable: true },
+                        { label: "Total Earnings",      value: fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount")), icon: "💰", color: "#db2777" },
                       ].map(k => (
-                        <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
+                        <div key={k.label}
+                          onClick={k.clickable ? () => setShowExpenseBreakdown(v => !v) : undefined}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}{k.clickable && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}</div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
+
+                    {/* CoHost callout expense breakdown panel */}
+                    {showExpenseBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>🔧 Your Callout Breakdown</div>
+                        {(() => {
+                          const rows = [
+                            ...dashFiltered.filter(b => (parseFloat(b.coHostCalloutCost)||0) > 0).map(b => ({ key: `bk-${b.id}`, date: b.startDate, desc: `Callout on booking ${b.id} (${b.guestName})`, prop: b.property, amt: b.coHostCalloutCost })),
+                            ...cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)).map(e => ({ key: `ex-${e.id}`, date: e.date, desc: e.description, prop: e.property, amt: e.amount })),
+                          ];
+                          if (!rows.length) return <div style={{ fontSize: 13, color: "#999" }}>No callout earnings recorded yet.</div>;
+                          return (
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead><tr>{["Date","Property","Description","Your Earnings"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                              <tbody>
+                                {rows.map(r => (
+                                  <tr key={r.key}>
+                                    <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{r.date || "—"}</td>
+                                    <td style={td}>{r.prop ? <Tag label={r.prop} color={propColor(r.prop)} /> : "—"}</td>
+                                    <td style={{ ...td, fontWeight: 600 }}>{r.desc}</td>
+                                    <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(r.amt)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                                  <td colSpan={3} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                                  <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(rows.reduce((a,r)=>a+(+r.amt||0),0))}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          );
+                        })()}
+                      </div>
+                    )}
                     <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>Earnings by Property</h3>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14, marginBottom: 24 }}>
                       {dashByProp.filter(p => p.count > 0).map(({ p, count, cohostEarnings, calloutEarnings }) => (
@@ -1649,8 +2358,8 @@ export default function App() {
                             <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
                               <td colSpan={5} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                               <td style={{ ...td, fontWeight: 700, color: "#8b5cf6" }}>{fmt(sum(dashFiltered,"cohostComm"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost"))}</td>
-                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#db2777" }}>{fmt(sum(dashFiltered,"cohostComm") + sum(dashFiltered,"coHostCalloutCost") + sum(cohostCalloutExpenses.filter(e => !(e.category === "CoHost Callout" && e.bookingId)),"amount"))}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1678,7 +2387,7 @@ export default function App() {
               </div>
             ) : (
               <>
-                <DashFilterBar />
+                {dashFilterBar}
                 {dashFiltered.length === 0 ? (
                   <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                     <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
@@ -1691,23 +2400,227 @@ export default function App() {
                         { label: "Bookings",          value: dashFiltered.length,                     icon: "📋", color: "#0D0D0D" },
                         { label: "Total Gross",        value: fmt(sum(dashFiltered,"fullGross")),      icon: "💷", color: "#0D0D0D" },
                         { label: "Booking Payouts",    value: fmt(sum(dashFiltered,"bookingPayout")),  icon: "🏦", color: "#2563eb" },
-                        { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit")), icon: "📈", color: "#16a34a" },
-                        { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed" },
-                        { label: "Total Expenses",     value: fmt(sum(expenses,"amount")),             icon: "💸", color: "#f97316" },
+                        { label: "Business Profit",    value: fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit), icon: "📈", color: "#16a34a", clickable: "profit" },
+                        { label: "Client Payouts",     value: fmt(sum(dashFiltered,"ownerPayout")),    icon: "🏠", color: "#7c3aed", clickable: "client" },
+                        { label: "Total Expenses",     value: fmt(sum(dashExpenses,"amount")),         icon: "💸", color: "#f97316", clickable: "expenses" },
+                        { label: "Cleaning & Laundry", value: fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees")), icon: "🧹", color: "#0891b2", clickable: "cleaning" },
+                        { label: "Spa Fees",           value: fmt(sum(dashFiltered,"spaFeeCharge")),   icon: "🛁", color: "#0ea5e9", clickable: "spa" },
                       ].map(k => (
-                        <div key={k.label} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0" }}>
+                        <div key={k.label}
+                          onClick={k.clickable === "cleaning" ? () => setShowCleaningBreakdown(v => !v) : k.clickable === "client" ? () => setShowClientPayoutBreakdown(v => !v) : k.clickable === "expenses" ? () => setShowExpenseBreakdown(v => !v) : k.clickable === "profit" ? () => setShowProfitBreakdown(v => !v) : k.clickable === "spa" ? () => setShowSpaBreakdown(v => !v) : undefined}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: k.clickable ? `1.5px solid ${k.color}` : "1px solid #F0F0F0", cursor: k.clickable ? "pointer" : "default" }}>
                           <div style={{ fontSize: 22, marginBottom: 8 }}>{k.icon}</div>
-                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+                          <div style={{ fontSize: 11, color: "#999999", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                            {k.label}
+                            {k.clickable === "cleaning" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showCleaningBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "client" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showClientPayoutBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "expenses" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showExpenseBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "profit" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showProfitBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                            {k.clickable === "spa" && <span style={{ marginLeft: 6, fontSize: 10, color: k.color }}>{showSpaBreakdown ? "▲ Hide" : "▼ Show"}</span>}
+                          </div>
                           <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
-                    <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>By Property</h3>
+
+                    {/* Business Profit breakdown panel */}
+                    {showProfitBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #16a34a", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#16a34a", marginBottom: 14 }}>📈 Where the Profit Comes From</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>{["Source","Property","Detail","Dates","Profit"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {dashFiltered.filter(b => (parseFloat(b.businessProfit)||0) !== 0).map(b => (
+                                <tr key={`bk-${b.id}`}>
+                                  <td style={td}><Tag label="Booking" color="#2563eb" /></td>
+                                  <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{b.guestName} <span style={{ color: "#bbb", fontSize: 11 }}>{b.id}</span></td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{b.startDate} → {b.endDate}</td>
+                                  <td style={{ ...td, fontWeight: 700, color: (parseFloat(b.businessProfit)||0) >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(b.businessProfit)}</td>
+                                </tr>
+                              ))}
+                              {expenses.filter(e => !e.bookingId && e.expenseType).map(e => {
+                                const p = e.expenseType === "business" ? -(+e.amount) : ((e.charge != null ? +e.charge : +e.amount) - (+e.amount));
+                                if (p === 0) return null;
+                                return (
+                                  <tr key={`ex-${e.id}`}>
+                                    <td style={td}><Tag label={e.expenseType === "business" ? "Biz Expense" : "Expense Markup"} color={e.expenseType === "business" ? "#8b5cf6" : "#f97316"} /></td>
+                                    <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
+                                    <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
+                                    <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.date || "—"}</td>
+                                    <td style={{ ...td, fontWeight: 700, color: p >= 0 ? "#16a34a" : "#dc2626" }}>{p >= 0 ? fmt(p) : "−" + fmt(-p)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                                <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL BUSINESS PROFIT</td>
+                                <td style={{ ...td, fontWeight: 800, color: "#16a34a" }}>{fmt(sum(dashFiltered,"businessProfit") + freeStandingProfit)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Booking profit = commission + fee margins − linked expenses. Expense rows show markup (charge − cost) or business costs.</div>
+                      </div>
+                    )}
+
+                    {/* Expenses breakdown panel */}
+                    {showExpenseBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #f97316", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#f97316", marginBottom: 14 }}>💸 Expense Breakdown</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>{["Date","Property","Description","Category","Cost","Charge","Type","Contractor"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {dashExpenses.map(e => (
+                                <tr key={e.id}>
+                                  <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{e.date || "—"}</td>
+                                  <td style={td}>{e.property ? <Tag label={e.property} color={propColor(e.property)} /> : <Tag label="Business" color="#8b5cf6" />}</td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{e.description}</td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.category}</td>
+                                  <td style={{ ...td, color: "#f97316", fontWeight: 700 }}>{fmt(e.amount)}</td>
+                                  <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : fmt(e.amount)}</td>
+                                  <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={e.expenseType === "business" ? "#8b5cf6" : e.expenseType === "owner" ? "#0891b2" : e.expenseType === "cohost-callout" ? "#f97316" : "#f59e0b"} /></td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666" }}>{e.contractor ? (users.find(u => u.id === e.contractor)?.name || "CoHost") : "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                                <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashExpenses,"amount"))}</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(dashExpenses.reduce((a,e)=>a+(e.charge!=null?+e.charge:+e.amount),0))}</td>
+                                <td colSpan={2} />
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Client Payout breakdown panel */}
+                    {showClientPayoutBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #7c3aed", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#7c3aed", marginBottom: 14 }}>🏠 Client Payout Breakdown</div>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>
+                              {["Property","Client","Bookings","Total Gross","Total Payout"].map(h => <th key={h} style={th}>{h}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {PROPERTY_NAMES.map(p => {
+                              const propRows = dashFiltered.filter(b => b.property === p);
+                              if (!propRows.length) return null;
+                              const clientUser = users.find(u => u.role === "client" && u.properties?.includes(p));
+                              return (
+                                <tr key={p}>
+                                  <td style={td}><Tag label={p} color={propColor(p)} /></td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{clientUser?.name || "—"}</td>
+                                  <td style={td}>{propRows.length}</td>
+                                  <td style={{ ...td, fontWeight: 700 }}>{fmt(sum(propRows,"fullGross"))}</td>
+                                  <td style={{ ...td, fontWeight: 700, color: "#7c3aed" }}>{fmt(sum(propRows,"ownerPayout"))}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={3} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700 }}>{fmt(sum(dashFiltered,"fullGross"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#7c3aed" }}>{fmt(sum(dashFiltered,"ownerPayout"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Spa fees breakdown panel */}
+                    {showSpaBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #0ea5e9", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#0ea5e9", marginBottom: 14 }}>🛁 Spa Fee Breakdown</div>
+                        {dashFiltered.filter(b => (parseFloat(b.spaFeeCharge)||0) + (parseFloat(b.spaFeeCost)||0) > 0).length === 0 ? (
+                          <div style={{ fontSize: 13, color: "#999" }}>No spa fees in this period.</div>
+                        ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>
+                              {["Booking ID","Property","Guest","Dates","Spa Cost","Spa Charge","Margin"].map(h => <th key={h} style={th}>{h}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashFiltered.filter(b => (parseFloat(b.spaFeeCharge)||0) + (parseFloat(b.spaFeeCost)||0) > 0).map(b => (
+                              <tr key={b.id}>
+                                <td style={{ ...td, color: "#999", fontSize: 11, fontWeight: 700 }}>{b.id}</td>
+                                <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
+                                <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
+                                <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{b.startDate} → {b.endDate}</td>
+                                <td style={{ ...td, color: "#f97316" }}>{fmt(b.spaFeeCost)}</td>
+                                <td style={{ ...td, color: "#0ea5e9" }}>{fmt(b.spaFeeCharge)}</td>
+                                <td style={{ ...td, fontWeight: 700, color: ((parseFloat(b.spaFeeCharge)||0) - (parseFloat(b.spaFeeCost)||0)) >= 0 ? "#16a34a" : "#dc2626" }}>{fmt((parseFloat(b.spaFeeCharge)||0) - (parseFloat(b.spaFeeCost)||0))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#f97316" }}>{fmt(sum(dashFiltered,"spaFeeCost"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0ea5e9" }}>{fmt(sum(dashFiltered,"spaFeeCharge"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#16a34a" }}>{fmt(sum(dashFiltered,"spaFeeCharge") - sum(dashFiltered,"spaFeeCost"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cleaning & Laundry breakdown panel */}
+                    {showCleaningBreakdown && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: "1.5px solid #0891b2", padding: 20, marginBottom: 24 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: "#0891b2", marginBottom: 14 }}>🧹 Cleaning & Laundry Breakdown</div>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr>
+                              {["Booking ID","Property","Guest","Dates","Cleaning Fee","Laundry","Total"].map(h => <th key={h} style={th}>{h}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashFiltered.filter(b => (parseFloat(b.cleaningFee)||0) + (parseFloat(b.laundryFees)||0) > 0).map(b => (
+                              <tr key={b.id}>
+                                <td style={{ ...td, color: "#999", fontSize: 11, fontWeight: 700 }}>{b.id}</td>
+                                <td style={td}><Tag label={b.property} color={propColor(b.property)} /></td>
+                                <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
+                                <td style={{ ...td, fontSize: 12, color: "#666" }}>{b.startDate} → {b.endDate}</td>
+                                <td style={{ ...td, color: "#0891b2" }}>{fmt(b.cleaningFee)}</td>
+                                <td style={{ ...td, color: "#0891b2" }}>{(parseFloat(b.laundryFees)||0) > 0 ? fmt(b.laundryFees) : "—"}</td>
+                                <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt((parseFloat(b.cleaningFee)||0) + (parseFloat(b.laundryFees)||0))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#F9F9F9", borderTop: "2px solid #E8E8E8" }}>
+                              <td colSpan={4} style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt(sum(dashFiltered,"cleaningFee"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt(sum(dashFiltered,"laundryFees"))}</td>
+                              <td style={{ ...td, fontWeight: 700, color: "#0891b2" }}>{fmt(sum(dashFiltered,"cleaningFee") + sum(dashFiltered,"laundryFees"))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                    <h3 style={{ fontWeight: 700, color: "#1A1A1A", marginBottom: 14, fontSize: 15 }}>By Property <span style={{ fontSize: 11, fontWeight: 400, color: "#999" }}>— click a card to see its bookings</span></h3>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14 }}>
                       {dashByProp.filter(p => p.count > 0).map(({ p, count, gross, profit, owner }) => (
-                        <div key={p} style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #F0F0F0", borderTop: `4px solid ${propColor(p)}` }}>
+                        <div key={p} onClick={() => setExpandedProp(v => v === p ? null : p)}
+                          style={{ background: "#FFFFFF", borderRadius: 12, padding: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: expandedProp === p ? `1.5px solid ${propColor(p)}` : "1px solid #F0F0F0", borderTop: `4px solid ${propColor(p)}`, cursor: "pointer" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                            <span style={{ fontWeight: 800, fontSize: 17 }}>{p}</span>
+                            <span style={{ fontWeight: 800, fontSize: 17 }}>{p} <span style={{ fontSize: 11, color: propColor(p), fontWeight: 700 }}>{expandedProp === p ? "▲" : "▼"}</span></span>
                             <Tag label={`${count} bookings`} color={propColor(p)} />
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1721,6 +2634,35 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+
+                    {/* Expanded property bookings */}
+                    {expandedProp && (
+                      <div style={{ background: "#FFFFFF", borderRadius: 12, border: `1.5px solid ${propColor(expandedProp)}`, padding: 20, marginTop: 14 }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: propColor(expandedProp), marginBottom: 14 }}>{expandedProp} — Bookings</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>{["ID","Platform","Guest","Dates","Full Gross","Booking Payout","Biz Comm","Client Payout","Profit"].map(h => <th key={h} style={th}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {dashFiltered.filter(b => b.property === expandedProp).map(b => (
+                                <tr key={b.id}>
+                                  <td style={{ ...td, fontSize: 11, color: "#999", fontWeight: 700 }}>{b.id}</td>
+                                  <td style={td}><Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} /></td>
+                                  <td style={{ ...td, fontWeight: 600 }}>{b.guestName}</td>
+                                  <td style={{ ...td, fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>{b.startDate} → {b.endDate}</td>
+                                  <td style={{ ...td, fontWeight: 700 }}>{fmt(b.fullGross)}</td>
+                                  <td style={{ ...td, color: "#2563eb" }}>{fmt(b.bookingPayout)}</td>
+                                  <td style={{ ...td, color: "#8b5cf6" }}>{fmt(b.businessComm)}</td>
+                                  <td style={{ ...td, color: "#7c3aed", fontWeight: 700 }}>{fmt(b.ownerPayout)}</td>
+                                  <td style={{ ...td, color: "#16a34a", fontWeight: 700 }}>{fmt(b.businessProfit)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </>
@@ -1750,7 +2692,10 @@ export default function App() {
           const selSty  = { padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF", cursor: "pointer" };
           return (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Expenses</h2>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", margin: 0 }}>Expenses</h2>
+                <button onClick={exportExpensesCSV} style={{ background: "#0D0D0D", color: "#fff", border: "none", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>⬇ Export CSV</button>
+              </div>
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -1850,7 +2795,7 @@ export default function App() {
                                 <td style={{ ...td, color: "#16a34a" }}>{e.charge != null ? fmt(e.charge) : "—"}</td>
                                 <td style={td}><Tag label={e.expenseType === "business" ? "Business" : e.expenseType === "owner" ? "Client" : e.expenseType === "cohost-callout" ? "CoHost Callout" : "Pending"} color={typeColor(e.expenseType)} /></td>
                                 <td style={{ ...td, color: "#666666", fontSize: 12 }}>{bk ? `${bk.id} (${bk.guestName})` : e.bookingId ? e.bookingId : "Free-standing"}</td>
-                                <td style={td}><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></td>
+                                <td style={td}><div style={{ display: "flex", gap: 4, whiteSpace: "nowrap" }}><button onClick={() => openEditExpense(e)} style={{ background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Edit</button><button onClick={() => deleteExpense(e.id)} style={{ background: "#fef2f2", color: "#dc2626", border: "none", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>Del</button></div></td>
                               </tr>
                             );
                           })}
@@ -1877,7 +2822,7 @@ export default function App() {
           const catColors = { Maintenance:"#f97316", Callout:"#ef4444", Hamper:"#8b5cf6", Replenishables:"#0891b2", Other:"#64748b" };
           // All expenses charged to this client (owner-typed, charge set)
           const allClientExp = expenses.filter(e =>
-            e.property === clientProperty && e.expenseType === "owner" && e.charge != null
+            e.property && clientProperties.includes(e.property) && (clientPropFilter === "All" || e.property === clientPropFilter) && e.expenseType === "owner" && e.charge != null
           );
           const expYearsC = [...new Set(allClientExp.map(e => (e.date||"").split("/")[2]).filter(Boolean))].sort();
           const [ceCat,   setCeCat]   = [expFilterCat,   setExpFilterCat];
@@ -1893,7 +2838,7 @@ export default function App() {
           const selSty = { padding: "8px 12px", border: "1.5px solid #E8E8E8", borderRadius: 10, fontSize: 13, background: "#FFFFFF" };
           return (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Expenses — {clientProperty}</h2>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0D0D0D", letterSpacing: "-0.3px", marginBottom: 20 }}>Expenses — {activeProperty}</h2>
 
               {/* Filter bar */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -1920,7 +2865,7 @@ export default function App() {
               {allClientExp.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
                   <div style={{ fontSize: 32, marginBottom: 10 }}>💸</div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: "#555555" }}>No expenses charged to {clientProperty} yet</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#555555" }}>No expenses charged to {activeProperty} yet</div>
                 </div>
               ) : ceFiltered.length === 0 ? (
                 <div style={{ background: "#FFFFFF", borderRadius: 16, padding: 60, textAlign: "center", color: "#999999" }}>
@@ -1996,7 +2941,7 @@ export default function App() {
         {tab === "settings" && !isCohost && !isClient && (() => {
           const roleColor = { owner: "#E61C5D", cohost: "#0D0D0D", client: "#0891b2" };
           const roleLabel = { owner: "Owner", cohost: "CoHost", client: "Client" };
-          const settingsTabs = ["users", "properties", "platforms"];
+          const settingsTabs = ["users", "properties", "platforms", "archive"];
           const lbl = { fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 };
           const inp = { width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "'Barlow', sans-serif" };
 
@@ -2026,9 +2971,9 @@ export default function App() {
 
           function startImpersonate(u) {
             if (u.role === "client") {
-              setImpersonating({ role: "client", clientProperty: u.properties[0], userName: u.name });
+              setImpersonating({ role: "client", clientProperty: u.properties[0], clientProperties: u.properties, userName: u.name, userId: u.id });
             } else if (u.role === "cohost") {
-              setImpersonating({ role: "cohost", clientProperty: null, cohostProperties: u.properties, userName: u.name });
+              setImpersonating({ role: "cohost", clientProperty: null, cohostProperties: u.properties, userName: u.name, userId: u.id });
             }
             setTab("bookings");
           }
@@ -2276,6 +3221,51 @@ export default function App() {
                 </>
               )}
 
+              {/* ── ARCHIVE ── */}
+              {settingsTab === "archive" && (() => {
+                // Load archived on first open
+                if (!archivedBookings.length && !archivedExpenses.length) loadArchived();
+                return (
+                  <>
+                    <div style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
+                      Archived bookings and expenses. Restore anything deleted by mistake — restored records reappear everywhere instantly.
+                      <button onClick={loadArchived} style={{ marginLeft: 10, background: "#F0F0F0", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>↻ Refresh</button>
+                    </div>
+                    <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Archived Bookings ({archivedBookings.length})</h3>
+                    {archivedBookings.length === 0 ? (
+                      <div style={{ fontSize: 13, color: "#999", marginBottom: 20 }}>Nothing archived.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+                        {archivedBookings.map(b => (
+                          <div key={b.id} style={{ background: "#FFFFFF", borderRadius: 10, border: "1px solid #F0F0F0", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                            <Tag label={b.property} color={propColor(b.property)} />
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{b.guestName}</span>
+                            <span style={{ fontSize: 12, color: "#999" }}>{b.startDate} → {b.endDate} · {fmt(b.fullGross)}</span>
+                            <span style={{ fontSize: 11, color: "#bbb" }}>{b.id}</span>
+                            <button onClick={() => restoreBooking(b.id)} style={{ marginLeft: "auto", background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>↩ Restore</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Archived Expenses ({archivedExpenses.length})</h3>
+                    {archivedExpenses.length === 0 ? (
+                      <div style={{ fontSize: 13, color: "#999" }}>Nothing archived.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {archivedExpenses.map(e => (
+                          <div key={e.id} style={{ background: "#FFFFFF", borderRadius: 10, border: "1px solid #F0F0F0", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                            <Tag label={e.property} color={propColor(e.property)} />
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{e.description}</span>
+                            <span style={{ fontSize: 12, color: "#999" }}>{fmt(e.amount)} · {e.category}</span>
+                            <button onClick={() => restoreExpense(e.id)} style={{ marginLeft: "auto", background: "#f0fdf4", color: "#16a34a", border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>↩ Restore</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
               {/* Add/Edit User Modal */}
               {showUserModal && (
                 <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
@@ -2362,11 +3352,14 @@ export default function App() {
               </div>
               <Field label="Guest Name" field="guestName" form={form} setForm={setForm} />
               <Field label="Booking ID" form={form} setForm={setForm} field="bookingId" />
-              <Field label="Start Date (DD/MM/YYYY)" field="startDate" form={form} setForm={setForm} />
-              <Field label="End Date (DD/MM/YYYY)" field="endDate" form={form} setForm={setForm} />
+              <DateField label="Start Date" field="startDate" form={form} setForm={setForm} />
+              <DateField label="End Date" field="endDate" form={form} setForm={setForm} />
               <Field label="Full Gross — Total guest paid (£)" field="fullGross" form={form} setForm={setForm} type="number" step="0.01" />
               <Field label="Cleaning Fee (£)" field="cleaningFee" form={form} setForm={setForm} type="number" step="0.01" />
               <Field label="Laundry Fees (£)" field="laundryFees" form={form} setForm={setForm} type="number" step="0.01" />
+              {form.platform === "Booking" && (
+                <Field label="City Tax (£) — included in gross by Booking.com, deducted from payout" field="cityTax" form={form} setForm={setForm} type="number" step="0.01" />
+              )}
               <Field label="Mistakes (£)" field="mistakes" form={form} setForm={setForm} type="number" step="0.01" />
               {isCohost ? (
                 <>
@@ -2399,7 +3392,17 @@ export default function App() {
             </div>
 
             {editId && (
-              <Attachments recordType="booking" recordId={editId} authUserId={authUser?.id} readOnly={false} />
+              <Attachments recordType="booking" recordId={editId} authUserId={authUser?.id} readOnly={false}
+                checkContext={{
+                  record: "booking", property: form.property, platform: form.platform, guest: form.guestName,
+                  dates: `${form.startDate} to ${form.endDate}`,
+                  full_gross: +form.fullGross || 0,
+                  cleaning_fee_charged_to_client: +form.cleaningFee || 0,
+                  laundry_fees: +form.laundryFees || 0,
+                  spa_cost: +form.spaFeeCost || 0, spa_charge: +form.spaFeeCharge || 0,
+                  callout_cost: +form.coHostCalloutCost || 0, callout_charge: +form.coHostCalloutCharge || 0,
+                  mistakes_absorbed: +form.mistakes || 0, city_tax: +form.cityTax || 0,
+                }} />
             )}
             {!editId && (
               <div style={{ marginTop: 14, fontSize: 12, color: "#999", fontStyle: "italic" }}>Save the booking first to add attachments.</div>
@@ -2479,15 +3482,16 @@ export default function App() {
         const linkOk = expenseForm.bookingLink === "none"
           || (expenseForm.bookingLink === "last" && !!lastB)
           || (expenseForm.bookingLink === "specific" && !!expenseForm.bookingId);
-        const canSave = !!expenseForm.description && !!amt && !!expenseForm.category && linkOk;
+        const isBizWide = !isCohost && expenseForm.expenseType === "business" && expenseForm.category !== "CoHost Callout";
+        const canSave = !!expenseForm.description && !!amt && !!expenseForm.category && (isBizWide || linkOk);
         const lbl = { fontSize: 10, fontWeight: 700, color: "#999999", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 };
         const inp = { padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box", background: "#FFFFFF" };
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div style={{ fontWeight: 800, fontSize: 17 }}>Add Expense / Callout</div>
-                <button onClick={() => setShowExpenseModal(false)} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{editExpenseId ? "Edit Expense" : "Add Expense / Callout"}</div>
+                <button onClick={() => { setShowExpenseModal(false); setEditExpenseId(null); }} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -2495,12 +3499,18 @@ export default function App() {
                 {/* Property + Date row */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div><label style={lbl}>Property</label>
-                    <select value={expenseForm.property} onChange={e => setExpenseForm(f => ({ ...f, property: e.target.value }))} style={inp}>
-                      {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    {!isCohost && expenseForm.expenseType === "business" && expenseForm.category !== "CoHost Callout" ? (
+                      <div style={{ ...inp, background: "#f5f3ff", color: "#8b5cf6", fontWeight: 700, display: "flex", alignItems: "center" }}>
+                        🏢 Business-wide
+                      </div>
+                    ) : (
+                      <select value={expenseForm.property} onChange={e => setExpenseForm(f => ({ ...f, property: e.target.value }))} style={inp}>
+                        {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    )}
                   </div>
                   <div><label style={lbl}>Date <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— defaults to today if left blank</span></label>
-                    <input type="text" placeholder="DD/MM/YYYY" value={expenseForm.date} onChange={e => setExpenseForm(f => ({ ...f, date: e.target.value }))} style={inp} />
+                    <input type="text" placeholder="DD/MM — year auto-fills" value={expenseForm.date} onChange={e => setExpenseForm(f => ({ ...f, date: e.target.value }))} onBlur={e => { const n = normalizeDMY(e.target.value); if (n !== e.target.value) setExpenseForm(f => ({ ...f, date: n })); }} style={inp} />
                   </div>
                 </div>
 
@@ -2529,6 +3539,30 @@ export default function App() {
                 {/* Description */}
                 <div><label style={lbl}>Description</label>
                   <input value={expenseForm.description} onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Replaced broken lamp, emergency lockout fix…" style={inp} />
+                </div>
+
+                {/* Contractor — who did the work */}
+                <div>
+                  <label style={lbl}>Contractor — who did the work?</label>
+                  <select value={expenseForm.contractor} onChange={e => setExpenseForm(f => ({ ...f, contractor: e.target.value }))}
+                    style={{ ...inp, background: "#fff" }}>
+                    {isCohost ? (
+                      <>
+                        <option value={impersonating?.userId || profile?.id || ""}>Myself</option>
+                        <option value="">External contractor / N/A</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="">External contractor / N/A</option>
+                        {users.filter(u => u.role === "cohost").map(u => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+                    If a CoHost did the work, select them — the cost is credited to their earnings automatically.
+                  </div>
                 </div>
 
                 {/* Amount */}
@@ -2576,7 +3610,8 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Booking link */}
+                {/* Booking link — hidden for business-wide expenses */}
+                {!isBizWide ? (
                 <div>
                   <label style={lbl}>Link to Booking</label>
                   <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
@@ -2602,14 +3637,27 @@ export default function App() {
                     <div style={{ background: "#F9F9F9", borderRadius: 8, padding: "9px 12px", fontSize: 12, color: "#666666" }}>This expense won't be tied to any specific booking.</div>
                   )}
                 </div>
+                ) : (
+                  <div style={{ background: "#f5f3ff", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#8b5cf6" }}>
+                    🏢 Business-wide expense — not tied to any property or booking. Comes straight out of business profit.
+                  </div>
+                )}
 
               </div>
               <div style={{ marginTop: 14, fontSize: 12, color: "#999", fontStyle: "italic" }}>
-                📎 You can attach receipts or photos after saving the expense.
+                {editExpenseId
+                  ? <Attachments recordType="expense" recordId={editExpenseId} authUserId={authUser?.id} readOnly={false}
+                      checkContext={{
+                        record: "expense", property: expenseForm.property, description: expenseForm.description,
+                        category: expenseForm.category, date: expenseForm.date,
+                        cost: +expenseForm.amount || 0,
+                        charge_to_client: isCohost ? undefined : (+expenseForm.charge || +expenseForm.amount || 0),
+                      }} />
+                  : <>📎 You can attach receipts or photos after saving the expense — save it, then press Edit.</>}
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
-                <button onClick={() => setShowExpenseModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
-                <button onClick={saveExpense} disabled={!canSave} style={btn("#f97316", "#fff", !canSave)}>Save Expense</button>
+                <button onClick={() => { setShowExpenseModal(false); setEditExpenseId(null); }} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
+                <button onClick={saveExpense} disabled={!canSave} style={btn("#f97316", "#fff", !canSave)}>{editExpenseId ? "Save Changes" : "Save Expense"}</button>
               </div>
             </div>
           </div>
@@ -2639,7 +3687,8 @@ export default function App() {
               </div>
 
               {/* Attachments */}
-              <Attachments recordType="expense" recordId={exp.id} authUserId={authUser?.id} readOnly={false} />
+              <Attachments recordType="expense" recordId={exp.id} authUserId={authUser?.id} readOnly={false}
+                checkContext={{ record: "expense", property: exp.property, description: exp.description, category: exp.category, date: exp.date, cost: +exp.amount || 0 }} />
 
               {/* Charge field */}
               <div style={{ marginBottom: 16 }}>
@@ -2682,11 +3731,178 @@ export default function App() {
         );
       })()}
 
+      {/* BOOKING DETAIL — FULL BREAKDOWN MODAL */}
+      {detailBookingId && (() => {
+        const b = calc.find(x => x.id === detailBookingId);
+        if (!b) return null;
+        const prop = PROPERTIES[b.property] || {};
+        const row = (label, value, color, bold, indent) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f5f5f5", paddingLeft: indent ? 16 : 0 }}>
+            <span style={{ fontSize: 13, color: bold ? "#0D0D0D" : "#666", fontWeight: bold ? 800 : 500 }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: bold ? 800 : 700, color: color || "#0D0D0D" }}>{value}</span>
+          </div>
+        );
+        const lines = [];
+        lines.push(row("Full Gross — what the guest paid", fmt(b.fullGross), "#0D0D0D", true));
+        if (b.platform === "AirBNB") lines.push(row(`Base (gross ÷ 1.1694)`, fmt(b.base), "#666", false, true));
+        else lines.push(row("Base / nightly amount", fmt(b.base), "#666", false, true));
+        lines.push(row("− Guest Service Fee", "−" + fmt(b.guestServiceFee), "#ef4444", false, true));
+        lines.push(row("− Host / Channel Service Fee", "−" + fmt(b.hostServiceFee), "#f97316", false, true));
+        if ((parseFloat(b.cityTax)||0) > 0) lines.push(row("− City Tax (not revenue)", "−" + fmt(b.cityTax), "#dc2626", false, true));
+        lines.push(row("= Booking Payout (received from platform)", fmt(b.bookingPayout), "#2563eb", true));
+        lines.push(row("− Cleaning Fee", "−" + fmt(b.cleaningFee), "#64748b", false, true));
+        lines.push(row("− Laundry Fees", "−" + fmt(b.laundryFees), "#64748b", false, true));
+        if (!isCohost && (parseFloat(b.spaFeeCharge)||0) > 0) lines.push(row("− Spa Fee Charge", "−" + fmt(b.spaFeeCharge), "#64748b", false, true));
+        if (isCohost && (parseFloat(b.spaFeeCost)||0) > 0) lines.push(row("− Spa Fee (cost)", "−" + fmt(b.spaFeeCost), "#64748b", false, true));
+        if (!isCohost && (parseFloat(b.coHostCalloutCharge)||0) > 0) lines.push(row("− CoHost Callout Charge", "−" + fmt(b.coHostCalloutCharge), "#f97316", false, true));
+        if (isCohost && (parseFloat(b.coHostCalloutCost)||0) > 0) lines.push(row("CoHost Callout (your earnings)", fmt(b.coHostCalloutCost), "#f97316", false, true));
+        if (!isCohost) lines.push(row("= True Net", fmt(b.trueNet), "#7c3aed", true));
+        if (!isCohost) lines.push(row(`− Business Commission (${+(prop.sholom*100||0).toFixed(0)}% of True Net)`, "−" + fmt(b.businessComm), "#8b5cf6", false, true));
+        lines.push(row(`CoHost Commission (${+(prop.cohost*100||0).toFixed(1)}% ${prop.model === "split" ? "of Booking Payout" : "of client-side net"})`, fmt(b.cohostComm), "#db2777", false, true));
+        lines.push(row("= Client Payout", fmt(b.ownerPayout), "#059669", true));
+        if (!isCohost && !isClient) lines.push(row("Business Profit on this booking", fmt(b.businessProfit), "#16a34a", true));
+        return (
+          <div onClick={() => setDetailBookingId(null)} style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 250, padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 18 }}>{b.guestName}</div>
+                  <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{b.id} · {b.startDate} → {b.endDate}</div>
+                </div>
+                <button onClick={() => setDetailBookingId(null)} style={{ background: "#F7F7F7", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+                <Tag label={b.property} color={propColor(b.property)} />
+                <Tag label={b.platform} color={b.platform === "Booking" ? "#003580" : b.platform === "Website" ? "#16a34a" : b.platform === "VRBO" ? "#0891b2" : b.platform === "Sykes" ? "#0d9488" : "#E61C5D"} />
+                {b.bookingId && <Tag label={`Ref: ${b.bookingId}`} color="#64748b" />}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Full Calculation Breakdown</div>
+              {lines}
+              {!isClient && (
+                <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+                  <button onClick={() => { setInvoice(b); setEmailTo(""); setEmailSent(false); setDetailBookingId(null); }} style={btn("#eff6ff", "#2563eb", false)}>Invoice</button>
+                  <button onClick={() => { openEdit(b); setDetailBookingId(null); }} style={btn("#16a34a", "#fff", false)}>Edit Booking</button>
+                  {!isCohost && <button onClick={() => { del(b.id); setDetailBookingId(null); }} style={btn("#fef2f2", "#dc2626", false)}>Archive</button>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* CSV EXPORT MODAL */}
+      {showCSVModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <div style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 420 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>⬇ Export Bookings CSV</div>
+              <button onClick={() => setShowCSVModal(false)} style={{ background: "#F0F0F0", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Property</label>
+                  <select value={csvForm.property} onChange={e => setCsvForm(f => ({ ...f, property: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Properties</option>
+                    {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Platform</label>
+                  <select value={csvForm.platform} onChange={e => setCsvForm(f => ({ ...f, platform: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Platforms</option>
+                    {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Month</label>
+                  <select value={csvForm.month} onChange={e => setCsvForm(f => ({ ...f, month: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Months</option>
+                    {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Year</label>
+                  <select value={csvForm.year} onChange={e => setCsvForm(f => ({ ...f, year: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Years</option>
+                    {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#999" }}>Exports every calculated column (gross, fees, payouts, commissions, profit) for the selected bookings — ready for Excel or your accountant.</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button onClick={() => setShowCSVModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
+              <button onClick={() => { exportBookingsCSV(csvForm); setShowCSVModal(false); }} style={btn("#0D0D0D", "#fff", false)}>Export CSV</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STATEMENT GENERATOR MODAL */}
+      {showStatementModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,13,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <div style={{ background: "#FFFFFF", borderRadius: 20, padding: 32, width: "100%", maxWidth: 420 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>📄 Generate Client Statement</div>
+              <button onClick={() => setShowStatementModal(false)} style={{ background: "#F0F0F0", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontWeight: 700 }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Property</label>
+                <select value={statementForm.property} onChange={e => setStatementForm(f => ({ ...f, property: e.target.value }))}
+                  style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                  <option value="All">🏢 All Properties (monthly summary)</option>
+                  {PROPERTY_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Platform</label>
+                <select value={statementForm.platform} onChange={e => setStatementForm(f => ({ ...f, platform: e.target.value }))}
+                  style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                  <option value="All">All Platforms</option>
+                  {PLATFORM_NAMES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Month</label>
+                  <select value={statementForm.month} onChange={e => setStatementForm(f => ({ ...f, month: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Months</option>
+                    {MONTH_NAMES.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Year</label>
+                  <select value={statementForm.year} onChange={e => setStatementForm(f => ({ ...f, year: e.target.value }))}
+                    style={{ width: "100%", padding: "9px 12px", border: "1.5px solid #E8E8E8", borderRadius: 8, fontSize: 13, background: "#fff" }}>
+                    <option value="All">All Years</option>
+                    {dashYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#999" }}>Opens a print-ready statement in a new tab — use your browser's print dialog to save it as a PDF and email it to the client.</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button onClick={() => setShowStatementModal(false)} style={btn("#F0F0F0", "#1A1A1A", false)}>Cancel</button>
+              <button onClick={() => { generateStatement(statementForm.property, statementForm.month, statementForm.year, statementForm.platform); setShowStatementModal(false); }} style={btn("#7c3aed", "#fff", false)}>Generate Statement</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE BOTTOM NAV */}
       {isMobile && (
         <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0D0D0D", borderTop: "2px solid #E61C5D", display: "flex", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom)" }}>
           {navTabs.map(t => {
-            const icons = { bookings: "📋", dashboard: "📊", expenses: "💸", settings: "⚙️" };
+            const icons = { bookings: "📋", calendar: "📅", dashboard: "📊", expenses: "💸", settings: "⚙️" };
             return (
               <button key={t} onClick={() => { setTab(t); setShowMobileMenu(false); }}
                 style={{ flex: 1, padding: "10px 4px 8px", background: "transparent", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
@@ -2700,7 +3916,7 @@ export default function App() {
       )}
 
       {/* Bottom padding so content clears the mobile nav */}
-      {isMobile && <div style={{ height: 70 }} />}
+      {isMobile && <div style={{ height: 90 }} />}
     </div>
   );
 }
